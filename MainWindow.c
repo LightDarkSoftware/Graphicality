@@ -3,14 +3,13 @@
 // Source may be used for educational purposes.
 
 #include <Windows.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <math.h>
+#include <iostream>
+#include <cmath>
+#include <vector>
 #include "Camera.h"
 
-float radians(float degrees) {
-    return degrees * (3.1415926535f / 180.0f);
+double radians(double degrees) {
+    return degrees * (3.1415926535 / 180.0);
 }
 
 int currentWidth = 800;
@@ -18,39 +17,31 @@ int currentHeight = 600;
 
 bool keys[256] = { false };
 
-typedef struct { unsigned char r, g, b, a; } Pixel;
-typedef struct { float x, y, z; } Vector3;
-typedef struct { float x, y; } Vector2;
-typedef struct { float r, g, b; } Colour3;
+struct Pixel { unsigned char r, g, b, a; } ;
+struct Vector3 { float x, y, z; } ;
+struct Vector2 { float x, y; } ;
+struct Colour3 { float r, g, b; } ;
 
-typedef struct {
+struct StructPart {
     Vector3 position;
     Vector3 size;
     Colour3 colour;
     Vector3 linearVelocity;
     bool anchored;
-} StructPart;
+};
 
 Vector2 lastMouse;
 
 Pixel* frameBuffer = NULL;
 float* zBuffer = NULL;
 
-StructPart* cubes = NULL;
-int cubeCount = 0;
+std::vector<StructPart> cubes;
 
 int Humanoid;
 float cameraDistance = 5.0f;
 
 StructPart CreateCube(Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    StructPart cube = {
-        .position = position,
-        .size = size,
-        .colour = colour,
-        .linearVelocity = {0.0f, 0.0f, 0.0f},
-        .anchored = anchored
-    };
-    return cube;
+    return StructPart{position, size, colour, {0.0f, 0.0f, 0.0f}, anchored};
 }
 
 float vertices[8][3] = {
@@ -146,7 +137,7 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
 }
 
 void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
-    float scaleFactor = currentHeight / (2.0f * tanf(radians(FieldOfView) / 2.0f));
+    float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) / 2.0f));
     float nearPlaneZ = 0.5f;
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
     float ambientIntensity = 0.5f;
@@ -206,14 +197,14 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
 
         // Get position relative to camera
         Vector3 offset = {
-            worldPosition.x - CameraCFrame.Position.x,
-            worldPosition.y - CameraCFrame.Position.y,
-            worldPosition.z - CameraCFrame.Position.z
+            worldPosition.x - Camera::CFrame.Position.x,
+            worldPosition.y - Camera::CFrame.Position.y,
+            worldPosition.z - Camera::CFrame.Position.z
         };
 
-        globalVertices[i].x = (offset.x * CameraCFrame.RightVector.x) + (offset.y * CameraCFrame.RightVector.y) + (offset.z * CameraCFrame.RightVector.z);
-        globalVertices[i].y = (offset.x * CameraCFrame.UpVector.x) + (offset.y * CameraCFrame.UpVector.y) + (offset.z * CameraCFrame.UpVector.z);
-        globalVertices[i].z = (offset.x * CameraCFrame.LookVector.x) + (offset.y * CameraCFrame.LookVector.y) + (offset.z * CameraCFrame.LookVector.z);
+        globalVertices[i].x = (offset.x * Camera::CFrame.RightVector.x) + (offset.y * Camera::CFrame.RightVector.y) + (offset.z * Camera::CFrame.RightVector.z);
+        globalVertices[i].y = (offset.x * Camera::CFrame.UpVector.x) + (offset.y * Camera::CFrame.UpVector.y) + (offset.z * Camera::CFrame.UpVector.z);
+        globalVertices[i].z = (offset.x * Camera::CFrame.LookVector.x) + (offset.y * Camera::CFrame.LookVector.y) + (offset.z * Camera::CFrame.LookVector.z);
     }
 
     for (int i = 0; i < 12; i++) {
@@ -336,21 +327,19 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
 }
 
 int addCube(Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    cubeCount++;
-    cubes = realloc(cubes, cubeCount * sizeof(StructPart));
-    cubes[cubeCount - 1] = CreateCube(position, size, colour, anchored);
-    return cubeCount - 1;
+    cubes.push_back(CreateCube(position, size, colour, anchored));
+    return (int)cubes.size() - 1;
 }
 
 void renderScene() {
-    for (int i = 0; i < cubeCount; i++) {
-        StructPart cube = cubes[i];
+    for (int i = 0; i < cubes.size(); i++) {
+        const StructPart& cube = cubes[i];
         renderCube(cube.position, cube.size, cube.colour);
     }
 }
 
 void processPhysics(float deltaTime) {
-    for (int i = 0; i < cubeCount; i++) {
+    for (int i = 0; i < cubes.size(); i++) {
         StructPart* cube = &cubes[i];
         if (cube->anchored) {
             continue;
@@ -384,17 +373,17 @@ void rotateCamera(float yaw, float pitch) {
     float uz = (rx * ly) - (ry * lx);
     Vector3 up = {ux, uy, uz};
 
-    CameraCFrame.RightVector.x = right.x;
-    CameraCFrame.RightVector.y = right.y;
-    CameraCFrame.RightVector.z = right.z;
+    Camera::CFrame.RightVector.x = right.x;
+    Camera::CFrame.RightVector.y = right.y;
+    Camera::CFrame.RightVector.z = right.z;
 
-    CameraCFrame.UpVector.x = up.x;
-    CameraCFrame.UpVector.y = up.y;
-    CameraCFrame.UpVector.z = up.z;
+    Camera::CFrame.UpVector.x = up.x;
+    Camera::CFrame.UpVector.y = up.y;
+    Camera::CFrame.UpVector.z = up.z;
 
-    CameraCFrame.LookVector.x = look.x;
-    CameraCFrame.LookVector.y = look.y;
-    CameraCFrame.LookVector.z = look.z;
+    Camera::CFrame.LookVector.x = look.x;
+    Camera::CFrame.LookVector.y = look.y;
+    Camera::CFrame.LookVector.z = look.z;
 }
 
 void CameraOrbit(float yaw, float pitch, int player) {
@@ -413,36 +402,36 @@ void CameraOrbit(float yaw, float pitch, int player) {
     float uz = (rx * ly) - (ry * lx);
     Vector3 up = {ux, uy, uz};
 
-    CameraCFrame.RightVector.x = right.x;
-    CameraCFrame.RightVector.y = right.y;
-    CameraCFrame.RightVector.z = right.z;
+    Camera::CFrame.RightVector.x = right.x;
+    Camera::CFrame.RightVector.y = right.y;
+    Camera::CFrame.RightVector.z = right.z;
 
-    CameraCFrame.UpVector.x = up.x;
-    CameraCFrame.UpVector.y = up.y;
-    CameraCFrame.UpVector.z = up.z;
+    Camera::CFrame.UpVector.x = up.x;
+    Camera::CFrame.UpVector.y = up.y;
+    Camera::CFrame.UpVector.z = up.z;
 
-    CameraCFrame.LookVector.x = look.x;
-    CameraCFrame.LookVector.y = look.y;
-    CameraCFrame.LookVector.z = look.z;
+    Camera::CFrame.LookVector.x = look.x;
+    Camera::CFrame.LookVector.y = look.y;
+    Camera::CFrame.LookVector.z = look.z;
 
-    CameraCFrame.Position.x = cubes[player].position.x - (CameraCFrame.LookVector.x * cameraDistance);
-    CameraCFrame.Position.y = cubes[player].position.y - (CameraCFrame.LookVector.y * cameraDistance);
-    CameraCFrame.Position.z = cubes[player].position.z - (CameraCFrame.LookVector.z * cameraDistance);
+    Camera::CFrame.Position.x = cubes[player].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
+    Camera::CFrame.Position.y = cubes[player].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
+    Camera::CFrame.Position.z = cubes[player].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
 }
 
 void mouseHandler(float mouseX, float mouseY) {
     float dx = (mouseX - lastMouse.x) * 0.005f;
     float dy = (mouseY - lastMouse.y) * 0.005f;
-    CameraCFrame.yaw += dx;
-    CameraCFrame.pitch = fmax(radians(-80), fmin(radians(80), CameraCFrame.pitch - dy));
+    Camera::CFrame.yaw += dx;
+    Camera::CFrame.pitch = fmax(radians(-80), fmin(radians(80), Camera::CFrame.pitch - dy));
     lastMouse.x = mouseX;
     lastMouse.y = mouseY;
-    rotateCamera(CameraCFrame.yaw, CameraCFrame.pitch);
-    //CameraOrbit(CameraCFrame.yaw, CameraCFrame.pitch, Humanoid);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
+    //CameraOrbit(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
 }
 
 void playerMovement(float deltaTime, int player) {
-	Vector3 LookVector = {CameraCFrame.LookVector.x, CameraCFrame.LookVector.y, CameraCFrame.LookVector.z};
+	Vector3 LookVector = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
     float FLength = sqrtf((LookVector.x * LookVector.x) + (LookVector.z * LookVector.z));
 	Vector3 forward = {LookVector.x, 0.0f, LookVector.z};
     if (FLength > 0.0f) {
@@ -450,7 +439,7 @@ void playerMovement(float deltaTime, int player) {
         forward.z /= FLength;
     }
 
-	Vector3 RightVector = {CameraCFrame.RightVector.x, CameraCFrame.RightVector.y, CameraCFrame.RightVector.z};
+	Vector3 RightVector = {Camera::CFrame.RightVector.x, Camera::CFrame.RightVector.y, Camera::CFrame.RightVector.z};
     float rLength = sqrtf((RightVector.x * RightVector.x) + (RightVector.y * RightVector.y) + (RightVector.z * RightVector.z));
 	Vector3 right = {RightVector.x, 0.0f, RightVector.z};
 
@@ -474,47 +463,46 @@ void playerMovement(float deltaTime, int player) {
 		Z = Z + (right.z * 200.0f * deltaTime);
     }
 	
-    cubes[player].linearVelocity = (Vector3){X, cubes[player].linearVelocity.y, Z};
-    CameraOrbit(CameraCFrame.yaw, CameraCFrame.pitch, player);
+    cubes[player].linearVelocity = {X, cubes[player].linearVelocity.y, Z};
+    CameraOrbit(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
 }
 
 void processMovement(float deltaTime) {
-    float regSpeed = 30.0f * deltaTime;
-    float cameraSpeed = 1.0f * regSpeed;
+    float cameraSpeed = 30.0f * deltaTime;
 
-    Vector3 look = {CameraCFrame.LookVector.x, CameraCFrame.LookVector.y, CameraCFrame.LookVector.z};
-    Vector3 right = {CameraCFrame.RightVector.x, CameraCFrame.RightVector.y, CameraCFrame.RightVector.z};
-    Vector3 up = {CameraCFrame.UpVector.x, CameraCFrame.UpVector.y, CameraCFrame.UpVector.z};
+    Vector3 look = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
+    Vector3 right = {Camera::CFrame.RightVector.x, Camera::CFrame.RightVector.y, Camera::CFrame.RightVector.z};
+    Vector3 up = {Camera::CFrame.UpVector.x, Camera::CFrame.UpVector.y, Camera::CFrame.UpVector.z};
 
     if (keys['W']) {
-        CameraCFrame.Position.x += look.x * cameraSpeed;
-        CameraCFrame.Position.y += look.y * cameraSpeed;
-        CameraCFrame.Position.z += look.z * cameraSpeed;
+        Camera::CFrame.Position.x += look.x * cameraSpeed;
+        Camera::CFrame.Position.y += look.y * cameraSpeed;
+        Camera::CFrame.Position.z += look.z * cameraSpeed;
     }
     if (keys['S']) {
-        CameraCFrame.Position.x -= look.x * cameraSpeed;
-        CameraCFrame.Position.y -= look.y * cameraSpeed;
-        CameraCFrame.Position.z -= look.z * cameraSpeed;
+        Camera::CFrame.Position.x -= look.x * cameraSpeed;
+        Camera::CFrame.Position.y -= look.y * cameraSpeed;
+        Camera::CFrame.Position.z -= look.z * cameraSpeed;
     }
     if (keys['A']) {
-        CameraCFrame.Position.x -= right.x * cameraSpeed;
-        CameraCFrame.Position.y -= right.y * cameraSpeed;
-        CameraCFrame.Position.z -= right.z * cameraSpeed;
+        Camera::CFrame.Position.x -= right.x * cameraSpeed;
+        Camera::CFrame.Position.y -= right.y * cameraSpeed;
+        Camera::CFrame.Position.z -= right.z * cameraSpeed;
     }
     if (keys['D']) {
-        CameraCFrame.Position.x += right.x * cameraSpeed;
-        CameraCFrame.Position.y += right.y * cameraSpeed;
-        CameraCFrame.Position.z += right.z * cameraSpeed;
+        Camera::CFrame.Position.x += right.x * cameraSpeed;
+        Camera::CFrame.Position.y += right.y * cameraSpeed;
+        Camera::CFrame.Position.z += right.z * cameraSpeed;
     }
     if (keys['E']) {
-        CameraCFrame.Position.x += up.x * cameraSpeed;
-        CameraCFrame.Position.y += up.y * cameraSpeed;
-        CameraCFrame.Position.z += up.z * cameraSpeed;
+        Camera::CFrame.Position.x += up.x * cameraSpeed;
+        Camera::CFrame.Position.y += up.y * cameraSpeed;
+        Camera::CFrame.Position.z += up.z * cameraSpeed;
     }
     if (keys['Q']) {
-        CameraCFrame.Position.x -= up.x * cameraSpeed;
-        CameraCFrame.Position.y -= up.y * cameraSpeed;
-        CameraCFrame.Position.z -= up.z * cameraSpeed;
+        Camera::CFrame.Position.x -= up.x * cameraSpeed;
+        Camera::CFrame.Position.y -= up.y * cameraSpeed;
+        Camera::CFrame.Position.z -= up.z * cameraSpeed;
     }
 }
 
@@ -554,16 +542,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         case WM_MOUSEWHEEL: {
-            Vector3 look = {CameraCFrame.LookVector.x, CameraCFrame.LookVector.y, CameraCFrame.LookVector.z};
+            Vector3 look = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-                //CameraCFrame.Position.x += look.x * 10.0;
-                //CameraCFrame.Position.y += look.y * 10.0;
-                //CameraCFrame.Position.z += look.z * 10.0;
+                //Camera::CFrame.Position.x += look.x * 10.0;
+                //Camera::CFrame.Position.y += look.y * 10.0;
+                //Camera::CFrame.Position.z += look.z * 10.0;
                 cameraDistance = fminf(80.0f, fmaxf(0.0f, floor(cameraDistance) / 1.5f));
             } else if (GET_WHEEL_DELTA_WPARAM(wParam) < 0) {
-                //CameraCFrame.Position.x -= look.x * 10.0;
-                //CameraCFrame.Position.y -= look.y * 10.0;
-                //CameraCFrame.Position.z -= look.z * 10.0;
+                //Camera::CFrame.Position.x -= look.x * 10.0;
+                //Camera::CFrame.Position.y -= look.y * 10.0;
+                //Camera::CFrame.Position.z -= look.z * 10.0;
                 cameraDistance = fminf(80, fmaxf(0.0f, cameraDistance * 1.5f));
                 if (cameraDistance == 0) {
                     cameraDistance = 1.5f;
@@ -583,7 +571,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     frameBuffer = (Pixel*)malloc(currentWidth * currentHeight * sizeof(Pixel));
     zBuffer = (float*)malloc(currentWidth * currentHeight * sizeof(float));
 
-    const char CLASS_NAME[] = "GCWindowClass";
+    const wchar_t CLASS_NAME[] = L"GCWindowClass";
 
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WindowProc;
@@ -591,13 +579,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wc.lpszClassName = CLASS_NAME;
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW);
     wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(1));
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 
     RegisterClass(&wc);
 
     HWND hwnd = CreateWindowEx(
         0,
         CLASS_NAME,
-        "Graphicality Engine",
+        L"Graphicality Engine",
         WS_OVERLAPPEDWINDOW,
 
         CW_USEDEFAULT, CW_USEDEFAULT, // POSITION
@@ -615,14 +604,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ShowWindow(hwnd, nCmdShow);
 
-    //addCube((Vector3){0.0f, 0.5f, 0.0f}, (Vector3){4.0f, 1.0f, 2.0f}, (Colour3){0.75f, 0.0f, 0.0f}, (bool)true);
-    //addCube((Vector3){2.0f, 1.0f, 1.0f}, (Vector3){4.0f, 1.0f, 2.0f}, (Colour3){0.0f, 0.0f, 0.75f}, (bool)true);
-    addCube((Vector3){0.0f, 0.0f, 0.0f}, (Vector3){100.0f, 1.0f, 100.0f}, (Colour3){0.0f, 0.75f, 0.0f}, (bool)true);
-    Humanoid = addCube((Vector3){0.0f, 3.0f, 0.0f}, (Vector3){2.0f, 5.0f, 1.0f}, (Colour3){0.75f, 0.75f, 0.75f}, (bool)false);
-    CameraCFrame.yaw = 0.0f;
-    CameraCFrame.pitch = radians(-45.0f);
+    //addCube({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
+    //addCube({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
+    addCube({0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
+    Humanoid = addCube({0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
+    Camera::CFrame.yaw = 0.0f;
+    Camera::CFrame.pitch = radians(-45.0f);
 
-    rotateCamera(CameraCFrame.yaw, CameraCFrame.pitch);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
 
     LARGE_INTEGER frequency;
     LARGE_INTEGER lastTime;
@@ -654,8 +643,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             fpsTimer += deltaTime;
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
-                snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, cubeCount);
-                //addCube((Vector3){2.0f, 1.0f, 1.0f}, (Vector3){1.0f, 1.0f, 1.0f}, (Colour3){0.5f, 0.5f, 0.5f}, (bool)false); // Just a test for later
+                snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, cubes.size());
+                //addCube({2.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
                 fpsTimer -= 1;
@@ -689,8 +678,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
     }
     ReleaseDC(hwnd, hdc);
-    free(frameBuffer);
-    free(zBuffer);
-    free(cubes);
+    delete[] frameBuffer;
+    delete[] zBuffer;
+    cubes.clear();
     return 0;
 }
