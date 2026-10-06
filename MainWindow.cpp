@@ -115,7 +115,7 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
         for (int x = minX; x <= maxX; x++) {
             float w0 = crossProduct(x1, y1, x2, y2, (float)x, (float)y) / area;
             float w1 = crossProduct(x2, y2, x0, y0, (float)x, (float)y) / area;
-            float w2 = 1.0f - w0 - w1;
+            float w2 = crossProduct(x0, y0, x1, y1, (float)x, (float)y) / area;
 
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 float invertedZ = (w0 / z0) + (w1 / z1) + (w2 / z2);
@@ -357,36 +357,7 @@ void processPhysics(float deltaTime) {
     }
 }
 
-void rotateCamera(float yaw, float pitch) {
-    float lx = sinf(yaw) * cosf(pitch);
-    float ly = sinf(pitch);
-    float lz = -cosf(yaw) * cosf(pitch);
-    Vector3 look = {lx, ly, lz};
-
-    float rx = cosf(yaw);
-    float ry = 0.0f;
-    float rz = sinf(yaw);
-    Vector3 right = {rx, ry, rz};
-
-    float ux = (ry * lz) - (rz * ly);
-    float uy = (rz * lx) - (rx * lz);
-    float uz = (rx * ly) - (ry * lx);
-    Vector3 up = {ux, uy, uz};
-
-    Camera::CFrame.RightVector.x = right.x;
-    Camera::CFrame.RightVector.y = right.y;
-    Camera::CFrame.RightVector.z = right.z;
-
-    Camera::CFrame.UpVector.x = up.x;
-    Camera::CFrame.UpVector.y = up.y;
-    Camera::CFrame.UpVector.z = up.z;
-
-    Camera::CFrame.LookVector.x = look.x;
-    Camera::CFrame.LookVector.y = look.y;
-    Camera::CFrame.LookVector.z = look.z;
-}
-
-void CameraOrbit(float yaw, float pitch, int player) {
+void rotateCamera(float yaw, float pitch, int player) {
     float lx = sinf(yaw) * cosf(pitch);
     float ly = sinf(pitch);
     float lz = -cosf(yaw) * cosf(pitch);
@@ -414,9 +385,11 @@ void CameraOrbit(float yaw, float pitch, int player) {
     Camera::CFrame.LookVector.y = look.y;
     Camera::CFrame.LookVector.z = look.z;
 
-    Camera::CFrame.Position.x = cubes[player].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
-    Camera::CFrame.Position.y = cubes[player].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
-    Camera::CFrame.Position.z = cubes[player].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
+    if (Camera::cameratype == Camera::ORBIT_CAMERA || Camera::cameratype == Camera::FP_CAMERA) {
+        Camera::CFrame.Position.x = cubes[player].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
+        Camera::CFrame.Position.y = cubes[player].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
+        Camera::CFrame.Position.z = cubes[player].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
+    }
 }
 
 void mouseHandler(float mouseX, float mouseY) {
@@ -426,8 +399,7 @@ void mouseHandler(float mouseX, float mouseY) {
     Camera::CFrame.pitch = fmax(radians(-80), fmin(radians(80), Camera::CFrame.pitch - dy));
     lastMouse.x = mouseX;
     lastMouse.y = mouseY;
-    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
-    //CameraOrbit(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
 }
 
 void playerMovement(float deltaTime, int player) {
@@ -464,7 +436,7 @@ void playerMovement(float deltaTime, int player) {
     }
 	
     cubes[player].linearVelocity = {X, cubes[player].linearVelocity.y, Z};
-    CameraOrbit(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
 }
 
 void processMovement(float deltaTime) {
@@ -525,6 +497,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         case WM_KEYDOWN:
             keys[wParam] = true;
+
+            if (wParam == 'C') {
+                if (Camera::cameratype != Camera::FREE_CAMERA) {
+                    Camera::cameratype = Camera::FREE_CAMERA;
+                } else {
+                    Camera::cameratype = (cameraDistance == 0) ? Camera::FP_CAMERA : Camera::ORBIT_CAMERA;
+                }
+            }
+
             return 0;
         case WM_KEYUP:
             keys[wParam] = false;
@@ -536,7 +517,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         case WM_MOUSEMOVE: {
-            if (wParam & MK_RBUTTON) {
+            if ((wParam & MK_RBUTTON) && Camera::cameratype != Camera::FP_CAMERA) {
+                mouseHandler(LOWORD(lParam), HIWORD(lParam));
+            } else if (Camera::cameratype == Camera::FP_CAMERA) {
                 mouseHandler(LOWORD(lParam), HIWORD(lParam));
             }
             return 0;
@@ -556,6 +539,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 if (cameraDistance == 0) {
                     cameraDistance = 1.5f;
                 }
+            }
+            if (Camera::cameratype != Camera::FREE_CAMERA) {
+                Camera::cameratype = (cameraDistance == 0) ? Camera::FP_CAMERA : Camera::ORBIT_CAMERA;
             }
             return 0;
         }
@@ -611,7 +597,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
 
-    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
+    Camera::cameratype = Camera::FP_CAMERA;
+
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
 
     LARGE_INTEGER frequency;
     LARGE_INTEGER lastTime;
@@ -650,9 +638,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 fpsTimer -= 1;
             }
             clearScreen();
-            //processMovement(deltaTime); // Freecam, not for player orbit
             processPhysics(deltaTime);
-            playerMovement(deltaTime, Humanoid); // Enable processMovement, and disable playerMovement for freecam
+
+            if (Camera::cameratype == Camera::FREE_CAMERA) {
+                processMovement(deltaTime);
+            } else {
+                playerMovement(deltaTime, Humanoid);
+            }
             renderScene();
 
             BITMAPINFO bmi = {0};
