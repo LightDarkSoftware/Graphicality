@@ -107,16 +107,32 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
     int minY = (int)floorf(fmaxf(0.0f, fminf(y0, fminf(y1, y2))));
     int maxY = (int)ceilf(fminf((float)(currentHeight - 1), fmaxf(y0, fmaxf(y1, y2))));
 
+    if (minX > maxX || minY > maxY) return;
+    float invertedArea = 1.0f / area;
+
     colour1.r /= z0; colour1.g /= z0; colour1.b /= z0;
     colour2.r /= z1; colour2.g /= z1; colour2.b /= z1;
     colour3.r /= z2; colour3.g /= z2; colour3.b /= z2;
 
-    for (int y = minY; y <= maxY; y++) {
-        for (int x = minX; x <= maxX; x++) {
-            float w0 = crossProduct(x1, y1, x2, y2, (float)x, (float)y) / area;
-            float w1 = crossProduct(x2, y2, x0, y0, (float)x, (float)y) / area;
-            float w2 = crossProduct(x0, y0, x1, y1, (float)x, (float)y) / area;
+    float w0_dx = -(y2 - y1) * invertedArea;
+    float w0_dy = (x2 - x1) * invertedArea;
 
+    float w1_dx = -(y0 - y2) * invertedArea;
+    float w1_dy = (x0 - x2) * invertedArea;
+
+    float w2_dx = -(y1 - y0) * invertedArea;
+    float w2_dy = (x1 - x0) * invertedArea;
+
+    float w0Y = crossProduct(x1, y1, x2, y2, (float)minX, (float)minY) * invertedArea;
+    float w1Y = crossProduct(x2, y2, x0, y0, (float)minX, (float)minY) * invertedArea;
+    float w2Y = crossProduct(x0, y0, x1, y1, (float)minX, (float)minY) * invertedArea;
+
+    for (int y = minY; y <= maxY; y++) {
+        float w0 = w0Y;
+        float w1 = w1Y;
+        float w2 = w2Y;
+
+        for (int x = minX; x <= maxX; x++) {
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 float invertedZ = (w0 / z0) + (w1 / z1) + (w2 / z2);
                 float z = 1.0f / invertedZ;
@@ -132,7 +148,13 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
                     frameBuffer[index].a = 255.0f;
                 }
             }
+            w0 += w0_dx;
+            w1 += w1_dx;
+            w2 += w2_dx;
         }
+        w0Y += w0_dy;
+        w1Y += w1_dy;
+        w2Y += w2_dy;
     }
 }
 
@@ -142,8 +164,8 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
     float ambientIntensity = 0.5f;
 
-    Vector3 globalVertices[8];
-    Colour3 vertexColours[8];
+    Vector3 globalVertices[24];
+    Colour3 vertexColours[24];
 
     for (int i = 0; i < sizeof(vertices) / sizeof(vertices[0]); i++) {
         Vector3 localVertex = {
@@ -282,7 +304,7 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
                 screen[2].x, screen[2].y
             );
 
-            if (area > 0.0f) {
+            if (area > 0.0f) { // Backface culling
                 rasterizeTriangle(
                     screen[0].x, screen[0].y, screen[0].z,
                     screen[1].x, screen[1].y, screen[1].z,
@@ -593,11 +615,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     //addCube({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addCube({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
     addCube({0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
+    addCube({10.0f, 20.0f, -10.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, true);
     Humanoid = addCube({0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
 
-    Camera::cameratype = Camera::FP_CAMERA;
+    Camera::cameratype = Camera::ORBIT_CAMERA;
 
     rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
 
