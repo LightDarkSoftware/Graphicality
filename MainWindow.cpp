@@ -39,6 +39,7 @@ std::vector<StructPart> cubes;
 
 int Humanoid;
 float cameraDistance = 5.0f;
+bool grounded = false;
 
 StructPart CreateCube(Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
     return StructPart{position, size, colour, {0.0f, 0.0f, 0.0f}, anchored};
@@ -53,21 +54,6 @@ float vertices[8][3] = {
     {-0.5f,  0.5f,  0.5f},
     { 0.5f, -0.5f,  0.5f},
     {-0.5f, -0.5f,  0.5f}
-};
-
-int edges[12][2] = {
-    {0, 1},
-    {2, 3},
-    {0, 2},
-    {1, 3},
-    {4, 5},
-    {6, 7},
-    {4, 6},
-    {5, 7},
-    {0, 4},
-    {1, 5},
-    {2, 6},
-    {3, 7}
 };
 
 int faces[12][3] = {
@@ -161,7 +147,7 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
     float ambientIntensity = 0.5f;
 
-    Vector3 globalVertices[24];
+    Vector3 globalVertices[8];
     Colour3 vertexColours[24];
 
     for (int i = 0; i < sizeof(vertices) / sizeof(vertices[0]); i++) {
@@ -369,7 +355,44 @@ bool intersectAABB(int a, int b) {
         (cubes[a].position.z + (cubes[a].size.z * 0.5f) >= cubes[b].position.z - (cubes[b].size.z * 0.5f));
 }
 
+void resolveAABB(int a, int b) {
+    float delta[3] = {
+        cubes[a].position.x - cubes[b].position.x,
+        cubes[a].position.y - cubes[b].position.y,
+        cubes[a].position.z - cubes[b].position.z
+    };
+
+    float overlap[3] = {
+        (cubes[a].size.x + cubes[b].size.x) * 0.5f - fabsf(delta[0]),
+        (cubes[a].size.y + cubes[b].size.y) * 0.5f - fabsf(delta[1]),
+        (cubes[a].size.z + cubes[b].size.z) * 0.5f - fabsf(delta[2])
+    };
+
+    int axis = 0;
+    if (overlap[1] < overlap[axis]) axis = 1;
+    if (overlap[2] < overlap[axis]) axis = 2;
+
+    float pushAmount = (delta[axis] > 0.0f) ? overlap[axis] : -overlap[axis];
+    float push[3] = {0.0f, 0.0f, 0.0f};
+    push[axis] = pushAmount;
+
+    float weightA = (cubes[a].anchored) ? 0.0f : ((cubes[b].anchored) ? 1.0f : 0.5f);
+    float weightB = (cubes[b].anchored) ? 0.0f : ((cubes[a].anchored) ? 1.0f : 0.5f);
+
+    cubes[a].position.x += push[0] * weightA;
+    cubes[a].position.y += push[1] * weightA;
+    cubes[a].position.z += push[2] * weightA;
+
+    cubes[b].position.x -= push[0] * weightB;
+    cubes[b].position.y -= push[1] * weightB;
+    cubes[b].position.z -= push[2] * weightB;
+
+    if (weightA > 0.0f) (&cubes[a].linearVelocity.x)[axis] = 0.0f;
+    if (weightB > 0.0f) (&cubes[b].linearVelocity.x)[axis] = 0.0f;
+}
+
 void checkCollisions() {
+    grounded = false;
     size_t cubeCount = cubes.size();
     for (size_t i = 0; i < cubeCount; i++) {
         for (size_t j = i + 1; j < cubeCount; j++) {
@@ -377,14 +400,21 @@ void checkCollisions() {
                 continue;
             }
             if (intersectAABB(i, j)) {
-                std::cout << "Collision detected";
+                float AY = cubes[i].position.y;
+                float BY = cubes[j].position.y;
+                resolveAABB(i, j);
+                if (cubes[i].position.y > AY && i == Humanoid) {
+                    grounded = true;
+                }
+                if (cubes[j].position.y > BY && j == Humanoid) {
+                    grounded = true;
+                }
             }
         }
     }
 }
 
 void processPhysics(float deltaTime) {
-    checkCollisions();
     for (int i = 0; i < cubes.size(); i++) {
         StructPart* cube = &cubes[i];
         if (cube->anchored) {
@@ -401,6 +431,7 @@ void processPhysics(float deltaTime) {
         cube->position.y += cube->linearVelocity.y * deltaTime;
         cube->position.z += cube->linearVelocity.z * deltaTime;
     }
+    checkCollisions();
 }
 
 void rotateCamera(float yaw, float pitch, int player) {
@@ -462,6 +493,7 @@ void playerMovement(float deltaTime, int player) {
 	Vector3 right = {RightVector.x, 0.0f, RightVector.z};
 
 	float X = cubes[player].linearVelocity.x;
+	float Y = cubes[player].linearVelocity.y;
 	float Z = cubes[player].linearVelocity.z;
 
 	if (keys['W']) {
@@ -480,8 +512,14 @@ void playerMovement(float deltaTime, int player) {
 		X = X + (right.x * 200.0f * deltaTime);
 		Z = Z + (right.z * 200.0f * deltaTime);
     }
+	if (keys[' ']) {
+        if (grounded) {
+            Y = 20.0f;
+            grounded = false;
+        }
+    }
 	
-    cubes[player].linearVelocity = {X, cubes[player].linearVelocity.y, Z};
+    cubes[player].linearVelocity = {X, Y, Z};
     rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
 }
 
@@ -639,6 +677,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     //addCube({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addCube({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
     addCube({0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
+
+    addCube({0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube({0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
     Humanoid = addCube({0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
@@ -678,7 +732,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
                 snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, cubes.size());
-                //addCube({2.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
+                addCube({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
                 fpsTimer -= 1;
