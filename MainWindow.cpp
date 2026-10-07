@@ -17,10 +17,10 @@ int currentHeight = 600;
 
 bool keys[256] = { false };
 
-struct Pixel { unsigned char r, g, b, a; } ;
-struct Vector3 { float x, y, z; } ;
-struct Vector2 { float x, y; } ;
-struct Colour3 { float r, g, b; } ;
+struct Pixel { unsigned char r, g, b, a; };
+struct Vector3 { float x, y, z; };
+struct Vector2 { float x, y; };
+struct Colour3 { float r, g, b; };
 
 struct StructPart {
     Vector3 position;
@@ -80,18 +80,15 @@ int faces[12][3] = {
 };
 
 void clearScreen() {
-    memset(frameBuffer, 0, currentWidth * currentHeight * sizeof(Pixel));
-    if (zBuffer != NULL) {
-        for (int i = 0; i < currentWidth * currentHeight; i++) {
-            zBuffer[i] = 10000.0f;
-        }
+    if (zBuffer != nullptr) {
+        std::fill_n(zBuffer, currentWidth * currentHeight, 10000.0f);
     }
-    for (int i = 0; i < (currentWidth * currentHeight); i++) {
-        frameBuffer[i].b = 70;
-        frameBuffer[i].g = 100;
-        frameBuffer[i].r = 200;
-        frameBuffer[i].a = 255;
-    }
+    Pixel skyColour;
+    skyColour.b = 70;
+    skyColour.g = 100;
+    skyColour.r = 200;
+    skyColour.a = 255;
+    std::fill_n(frameBuffer, currentWidth * currentHeight, skyColour);
 }
 
 float crossProduct(float ax, float ay, float bx, float by, float cx, float cy) {
@@ -159,7 +156,7 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
 }
 
 void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
-    float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) / 2.0f));
+    float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) * 0.5f));
     float nearPlaneZ = 0.5f;
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
     float ambientIntensity = 0.5f;
@@ -292,8 +289,8 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
         Vector3 screen[4];
 
         for (int j = 0; j < clippedCount; j++) {
-            screen[j].x = (clipped[j].x * scaleFactor) / clipped[j].z + (currentWidth / 2.0f);
-            screen[j].y = -(clipped[j].y * scaleFactor) / clipped[j].z + (currentHeight / 2.0f);
+            screen[j].x = (clipped[j].x * scaleFactor) / clipped[j].z + (currentWidth * 0.5f);
+            screen[j].y = -(clipped[j].y * scaleFactor) / clipped[j].z + (currentHeight * 0.5f);
             screen[j].z = clipped[j].z;
         }
 
@@ -360,7 +357,34 @@ void renderScene() {
     }
 }
 
+bool intersectAABB(int a, int b) {
+    return
+        (cubes[a].position.x - (cubes[a].size.x * 0.5f) <= cubes[b].position.x + (cubes[b].size.x * 0.5f)) &&
+        (cubes[a].position.x + (cubes[a].size.x * 0.5f) >= cubes[b].position.x - (cubes[b].size.x * 0.5f)) &&
+
+        (cubes[a].position.y - (cubes[a].size.y * 0.5f) <= cubes[b].position.y + (cubes[b].size.y * 0.5f)) &&
+        (cubes[a].position.y + (cubes[a].size.y * 0.5f) >= cubes[b].position.y - (cubes[b].size.y * 0.5f)) &&
+
+        (cubes[a].position.z - (cubes[a].size.z * 0.5f) <= cubes[b].position.z + (cubes[b].size.z * 0.5f)) &&
+        (cubes[a].position.z + (cubes[a].size.z * 0.5f) >= cubes[b].position.z - (cubes[b].size.z * 0.5f));
+}
+
+void checkCollisions() {
+    size_t cubeCount = cubes.size();
+    for (size_t i = 0; i < cubeCount; i++) {
+        for (size_t j = i + 1; j < cubeCount; j++) {
+            if (cubes[i].anchored && cubes[j].anchored) {
+                continue;
+            }
+            if (intersectAABB(i, j)) {
+                std::cout << "Collision detected";
+            }
+        }
+    }
+}
+
 void processPhysics(float deltaTime) {
+    checkCollisions();
     for (int i = 0; i < cubes.size(); i++) {
         StructPart* cube = &cubes[i];
         if (cube->anchored) {
@@ -371,7 +395,7 @@ void processPhysics(float deltaTime) {
         cube->linearVelocity.z *= expf(-10.0f * deltaTime);
 
         float gravity = -50.0f;
-        //cube->linearVelocity.y += gravity * deltaTime;
+        cube->linearVelocity.y += gravity * deltaTime;
 
         cube->position.x += cube->linearVelocity.x * deltaTime;
         cube->position.y += cube->linearVelocity.y * deltaTime;
@@ -615,7 +639,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     //addCube({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addCube({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
     addCube({0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
-    addCube({10.0f, 20.0f, -10.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, true);
     Humanoid = addCube({0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
@@ -693,8 +716,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
     }
     ReleaseDC(hwnd, hdc);
-    delete[] frameBuffer;
-    delete[] zBuffer;
+    free(frameBuffer);
+    free(zBuffer);
     cubes.clear();
     return 0;
 }
