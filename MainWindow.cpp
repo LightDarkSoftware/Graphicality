@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 #include <iostream>
+#include <fstream>
 #include <cmath>
 #include <vector>
 #include "Camera.h"
@@ -37,8 +38,9 @@ float* zBuffer = NULL;
 
 std::vector<StructPart> cubes;
 
-int Humanoid;
 float cameraDistance = 5.0f;
+
+int Humanoid;
 bool grounded = false;
 
 StructPart CreateCube(Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
@@ -432,6 +434,7 @@ void processPhysics(float deltaTime) {
         cube->position.z += cube->linearVelocity.z * deltaTime;
     }
     checkCollisions();
+    std::cout << cubes[Humanoid].linearVelocity.y << std::endl;
 }
 
 void rotateCamera(float yaw, float pitch, int player) {
@@ -562,6 +565,79 @@ void processMovement(float deltaTime) {
     }
 }
 
+
+// SAVE AND OPEN FILE
+void saveToFile(const std::string& filename) {
+    std::ofstream outFile(filename);
+
+    if (!outFile) {
+        std::cerr << "Failed to save file: " << filename << std::endl;
+        return;
+    }
+
+    outFile << cubes.size() << "\n";
+    for (const auto& cube : cubes) {
+        outFile << cube.position.x << " " << cube.position.y << " " << cube.position.z << " "
+                << cube.size.x << " " << cube.size.y << " " << cube.size.z << " "
+                << cube.colour.r << " " << cube.colour.g << " " << cube.colour.b << " "
+                << cube.anchored << "\n";
+    }
+
+    outFile.close();
+    std::cout << "Sucessfully saved file to: " << filename << std::endl;
+}
+
+void openFile(const std::string& filename) {
+    std::ifstream inFile(filename);
+
+    if (!inFile) {
+        std::cerr << "Failed to read file: " << filename << std::endl;
+        return;
+    }
+
+    cubes.clear();
+    size_t cubeCount = 0;
+    if (!(inFile >> cubeCount)) return;
+
+    for (size_t i = 0; i < cubeCount; ++i) {
+        Vector3 position;
+        Vector3 size;
+        Colour3 colour;
+        bool anchored;
+
+        if (inFile >> position.x >> position.y >> position.z
+                   >> size.x >> size.y >> size.z
+                   >> colour.r >> colour.g >> colour.b
+                   >> anchored) {
+            cubes.push_back(CreateCube(position, size, colour, anchored));
+        }
+    }
+
+    inFile.close();
+    std::cout << "Sucessfully opened file: " << filename << std::endl;
+}
+
+// Create web protocol
+void registerProtocol() {
+    wchar_t clientPath[MAX_PATH];
+    GetModuleFileNameW(NULL, clientPath, MAX_PATH);
+    std::wstring clientString(clientPath);
+
+    std::wstring cliArg = L"\"" + clientString + L"\" \"%1\"";
+    HKEY hKey;
+
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\graphicality", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)L"URL:graphicality Protocol", 20 * sizeof(wchar_t));
+        RegSetValueExW(hKey, L"URL Protocol", 0, REG_SZ, (BYTE*)L"", 0);
+        RegCloseKey(hKey);
+
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\graphicality\\shell\\open\\command", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)cliArg.c_str(), (cliArg.length() + 1) * sizeof(wchar_t));
+            RegCloseKey(hKey);
+        }
+    }
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_SIZE: {
@@ -588,6 +664,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 } else {
                     Camera::cameratype = (cameraDistance == 0) ? Camera::FP_CAMERA : Camera::ORBIT_CAMERA;
                 }
+            }
+            if (wParam == '1') {
+                saveToFile("test.grfx");
+            }
+            if (wParam == '2') {
+                openFile("test.grfx");
             }
 
             return 0;
@@ -638,6 +720,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    registerProtocol();
     frameBuffer = (Pixel*)malloc(currentWidth * currentHeight * sizeof(Pixel));
     zBuffer = (float*)malloc(currentWidth * currentHeight * sizeof(float));
 
@@ -732,7 +815,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
                 snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, cubes.size());
-                addCube({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
+                //addCube({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
                 fpsTimer -= 1;
