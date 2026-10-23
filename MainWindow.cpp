@@ -83,6 +83,26 @@ float crossProduct(float ax, float ay, float bx, float by, float cx, float cy) {
     return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 }
 
+Vector3 crossProduct3D(Vector3 a, Vector3 b) {
+    float x = (a.y * b.z) - (a.z * b.y);
+    float y = (a.z * b.x) - (a.x * b.z);
+    float z = (a.x * b.y) - (a.y * b.x);
+    return Vector3{x, y, z};
+}
+
+Vector3 Normalize(Vector3 vector) {
+    float magnitude = sqrtf(vector.x*vector.x + vector.y*vector.y + vector.z*vector.z);
+    if (magnitude == 0.0f) {
+        return Vector3{0.0f, 0.0f, 0.0f};
+    }
+    Vector3 normal = {
+        vector.x / magnitude,
+        vector.y / magnitude,
+        vector.z / magnitude
+    };
+    return normal;
+}
+
 void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, Colour3 colour1, Colour3 colour2, Colour3 colour3) {
     float area = crossProduct(x0, y0, x1, y1, x2, y2);
     if (area == 0) return;
@@ -149,8 +169,8 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
     float ambientIntensity = 0.5f;
 
-    Vector3 globalVertices[8];
-    Colour3 vertexColours[24];
+    Vector3 globalVertices[std::size(vertices)];
+    Colour3 vertexColours[std::size(vertices)];
 
     for (int i = 0; i < sizeof(vertices) / sizeof(vertices[0]); i++) {
         Vector3 localVertex = {
@@ -173,13 +193,7 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
             vertices[i][2]
         };
 
-        float normalMagnitude = sqrtf(localNormal.x*localNormal.x + localNormal.y*localNormal.y + localNormal.z*localNormal.z);
-
-        Vector3 worldNormal = {
-            localNormal.x / normalMagnitude,
-            localNormal.y / normalMagnitude,
-            localNormal.z / normalMagnitude
-        };
+        Vector3 worldNormal = Normalize(localNormal);
 
         // Lighting
         Vector3 lightDirection = {
@@ -423,6 +437,11 @@ void processPhysics(float deltaTime) {
             continue;
         }
 
+        // Cube holds the value of the current cube, "i" holds the cube in cube count
+        //if (i != Humanoid) {
+        //    return;
+        //}
+
         cube->linearVelocity.x *= expf(-10.0f * deltaTime);
         cube->linearVelocity.z *= expf(-10.0f * deltaTime);
 
@@ -483,45 +502,45 @@ void mouseHandler(float mouseX, float mouseY) {
 }
 
 void playerMovement(float deltaTime, int player) {
-	Vector3 LookVector = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
+    Vector3 LookVector = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
     float FLength = sqrtf((LookVector.x * LookVector.x) + (LookVector.z * LookVector.z));
-	Vector3 forward = {LookVector.x, 0.0f, LookVector.z};
+    Vector3 forward = {LookVector.x, 0.0f, LookVector.z};
     if (FLength > 0.0f) {
         forward.x /= FLength;
         forward.z /= FLength;
     }
 
-	Vector3 RightVector = {Camera::CFrame.RightVector.x, Camera::CFrame.RightVector.y, Camera::CFrame.RightVector.z};
+    Vector3 RightVector = {Camera::CFrame.RightVector.x, Camera::CFrame.RightVector.y, Camera::CFrame.RightVector.z};
     float rLength = sqrtf((RightVector.x * RightVector.x) + (RightVector.y * RightVector.y) + (RightVector.z * RightVector.z));
-	Vector3 right = {RightVector.x, 0.0f, RightVector.z};
+    Vector3 right = {RightVector.x, 0.0f, RightVector.z};
 
-	float X = cubes[player].linearVelocity.x;
-	float Y = cubes[player].linearVelocity.y;
-	float Z = cubes[player].linearVelocity.z;
+    float X = cubes[player].linearVelocity.x;
+    float Y = cubes[player].linearVelocity.y;
+    float Z = cubes[player].linearVelocity.z;
 
-	if (keys['W']) {
-		X = X + (forward.x * 200.0f * deltaTime);
-		Z = Z + (forward.z * 200.0f * deltaTime);
+    if (keys['W']) {
+        X = X + (forward.x * 200.0f * deltaTime);
+        Z = Z + (forward.z * 200.0f * deltaTime);
     }
-	if (keys['S']) {
-		X = X - (forward.x * 200.0f * deltaTime);
-		Z = Z - (forward.z * 200.0f * deltaTime);
+    if (keys['S']) {
+        X = X - (forward.x * 200.0f * deltaTime);
+        Z = Z - (forward.z * 200.0f * deltaTime);
     }
-	if (keys['A']) {
-		X = X - (right.x * 200.0f * deltaTime);
-		Z = Z - (right.z * 200.0f * deltaTime);
+    if (keys['A']) {
+        X = X - (right.x * 200.0f * deltaTime);
+        Z = Z - (right.z * 200.0f * deltaTime);
     }
-	if (keys['D']) {
-		X = X + (right.x * 200.0f * deltaTime);
-		Z = Z + (right.z * 200.0f * deltaTime);
+    if (keys['D']) {
+        X = X + (right.x * 200.0f * deltaTime);
+        Z = Z + (right.z * 200.0f * deltaTime);
     }
-	if (keys[' ']) {
+    if (keys[' ']) {
         if (grounded) {
             Y = 20.0f;
             grounded = false;
         }
     }
-	
+        
     cubes[player].linearVelocity = {X, Y, Z};
     rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
 }
