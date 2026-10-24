@@ -2,11 +2,16 @@
 // Graphicality Engine is propriatary software, All contents of Graphicality must not be reproduced.
 // Source may be used for educational purposes.
 
+// Make some sort of class for cube/sphere/wedge etc. in addCube maybe?
+// In renderCube, load in the vertices and faces according to the class.
+// Please figure out how to load meshes. Maybe have an ID like RBX or a filepath and if ID/filepath not, load a cube.
+
 #include <Windows.h>
 #include <iostream>
 #include <fstream>
 #include <cmath>
 #include <vector>
+#include <array>
 #include "Camera.h"
 
 double radians(double degrees) {
@@ -23,7 +28,21 @@ struct Vector3 { float x, y, z; };
 struct Vector2 { float x, y; };
 struct Colour3 { float r, g, b; };
 
+using Vertex3D = std::array<float, 3>;
+using Face3D = std::vector<int>;
+
+struct MeshData {
+    std::vector<Vertex3D> vertices;
+    std::vector<Face3D> faces;
+};
+
+enum class PartShape {
+    Cube,
+    Plane
+};
+
 struct StructPart {
+    PartShape shape;
     Vector3 position;
     Vector3 size;
     Colour3 colour;
@@ -36,35 +55,48 @@ Vector2 lastMouse;
 Pixel* frameBuffer = NULL;
 float* zBuffer = NULL;
 
-std::vector<StructPart> cubes;
+std::vector<StructPart> worldParts;
 
 float cameraDistance = 5.0f;
 
 int Humanoid;
 bool grounded = false;
 
-StructPart CreateCube(Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    return StructPart{position, size, colour, {0.0f, 0.0f, 0.0f}, anchored};
+StructPart CreateCube(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
+    return StructPart{shape, position, size, colour, {0.0f, 0.0f, 0.0f}, anchored};
 }
 
-float vertices[8][3] = {
-    { 0.5f,  0.5f, -0.5f},
-    {-0.5f,  0.5f, -0.5f},
-    { 0.5f, -0.5f, -0.5f},
-    {-0.5f, -0.5f, -0.5f},
-    { 0.5f,  0.5f,  0.5f},
-    {-0.5f,  0.5f,  0.5f},
-    { 0.5f, -0.5f,  0.5f},
-    {-0.5f, -0.5f,  0.5f}
+MeshData CubeMesh = {
+    {
+        { 0.5f,  0.5f, -0.5f},
+        {-0.5f,  0.5f, -0.5f},
+        { 0.5f, -0.5f, -0.5f},
+        {-0.5f, -0.5f, -0.5f},
+        { 0.5f,  0.5f,  0.5f},
+        {-0.5f,  0.5f,  0.5f},
+        { 0.5f, -0.5f,  0.5f},
+        {-0.5f, -0.5f,  0.5f}
+    },
+    {
+        {4, 6, 5}, {5, 6, 7},
+        {1, 3, 0}, {0, 3, 2},
+        {5, 7, 1}, {1, 7, 3},
+        {0, 2, 4}, {4, 2, 6},
+        {5, 1, 4}, {4, 1, 0},
+        {2, 3, 6}, {6, 3, 7}
+    }
 };
 
-int faces[12][3] = {
-    {4, 6, 5}, {5, 6, 7},
-    {1, 3, 0}, {0, 3, 2},
-    {5, 7, 1}, {1, 7, 3},
-    {0, 2, 4}, {4, 2, 6},
-    {5, 1, 4}, {4, 1, 0},
-    {2, 3, 6}, {6, 3, 7}
+MeshData PlaneMesh = {
+    {
+        { 0.5f,  0.0f, -0.5f},
+        {-0.5f,  0.0f, -0.5f},
+        { 0.5f,  0.0f,  0.5f},
+        {-0.5f,  0.0f,  0.5f}
+    },
+    {
+        {3, 1, 2}, {2, 1, 0}
+    }
 };
 
 void clearScreen() {
@@ -101,6 +133,26 @@ Vector3 Normalize(Vector3 vector) {
         vector.z / magnitude
     };
     return normal;
+}
+
+Vector3 rotateVector3(Vector3 vertex, Vector3 rotation) {
+    float x = vertex.x;
+    float y = vertex.y;
+    float z = vertex.z;
+
+    float radX = rotation.x;
+    float y1 = y * cosf(radX) - z * sinf(radX);
+    float z1 = z * cosf(radX) + y * sinf(radX);
+
+    float radY = rotation.y;
+    float x2 = x * cosf(radY) - z1 * sinf(radY);
+    float z2 = z1 * cosf(radY) + x * sinf(radY);
+
+    float radZ = rotation.z;
+    float x3 = x2 * cosf(radZ) - y1 * sinf(radZ);
+    float y3 = y1 * cosf(radZ) + x2 * sinf(radZ);
+
+    return Vector3{x3, y3, z2};
 }
 
 void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, Colour3 colour1, Colour3 colour2, Colour3 colour3) {
@@ -163,34 +215,70 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
     }
 }
 
-void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
+void renderCube(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
     float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) * 0.5f));
     float nearPlaneZ = 0.5f;
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
     float ambientIntensity = 0.5f;
 
-    Vector3 globalVertices[std::size(vertices)];
-    Colour3 vertexColours[std::size(vertices)];
+    const MeshData& partMesh = (shape == PartShape::Cube) ? CubeMesh : PlaneMesh;
 
-    for (int i = 0; i < sizeof(vertices) / sizeof(vertices[0]); i++) {
+    size_t vertexCount = partMesh.vertices.size();
+    std::vector<Vector3> globalVertices(vertexCount);
+    std::vector<Colour3> vertexColours(vertexCount);
+    size_t faceCount = partMesh.faces.size();
+
+    Vector3 rotation;
+
+    if (shape == PartShape::Plane) {
+        float tx = position.x - Camera::CFrame.Position.x;
+        float ty = position.y - Camera::CFrame.Position.y;
+        float tz = position.z - Camera::CFrame.Position.z;
+        Vector3 rawLV = {tx, ty, tz};
+
+        Vector3 lV = Normalize(rawLV);
+        Vector3 uV = {0, 1, 0};
+        Vector3 rV = Normalize(crossProduct3D(uV, lV));
+        Vector3 nuV = Normalize(crossProduct3D(lV, rV));
+
+        float rx = std::asin(-lV.y); // Pitch
+        float ry = -std::atan2(lV.x, lV.z); // Yaw
+        float rz = std::atan2(rV.y, uV.y); // Roll
+
+        rotation = {rx, ry, rz};
+        rotation.x += radians(-90.0f);
+    }
+    
+    for (size_t i = 0; i < vertexCount; i++) {
         Vector3 localVertex = {
-            vertices[i][0] * size.x,
-            vertices[i][1] * size.y,
-            vertices[i][2] * size.z
+            partMesh.vertices[i][0] * size.x,
+            partMesh.vertices[i][1] * size.y,
+            partMesh.vertices[i][2] * size.z
         };
 
-        // Get position relative to world
-        Vector3 worldPosition = {
-            position.x + localVertex.x,
-            position.y + localVertex.y,
-            position.z + localVertex.z
-        };
+        Vector3 worldPosition;
+        if (shape == PartShape::Plane) {
+            Vector3 rotatedVertex = rotateVector3(localVertex, rotation);
+
+            // Get position relative to world
+            worldPosition = {
+                position.x + rotatedVertex.x,
+                position.y + rotatedVertex.y,
+                position.z + rotatedVertex.z
+            };
+        } else {
+            worldPosition = {
+                position.x + localVertex.x,
+                position.y + localVertex.y,
+                position.z + localVertex.z
+            };
+        }
 
         // Normal
         Vector3 localNormal = {
-            vertices[i][0],
-            vertices[i][1],
-            vertices[i][2]
+            partMesh.vertices[i][0],
+            partMesh.vertices[i][1],
+            partMesh.vertices[i][2]
         };
 
         Vector3 worldNormal = Normalize(localNormal);
@@ -228,10 +316,10 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
         globalVertices[i].z = (offset.x * Camera::CFrame.LookVector.x) + (offset.y * Camera::CFrame.LookVector.y) + (offset.z * Camera::CFrame.LookVector.z);
     }
 
-    for (int i = 0; i < 12; i++) {
-        int index0 = faces[i][0];
-        int index1 = faces[i][1];
-        int index2 = faces[i][2];
+    for (size_t i = 0; i < faceCount; i++) {
+        int index0 = partMesh.faces[i][0];
+        int index1 = partMesh.faces[i][1];
+        int index2 = partMesh.faces[i][2];
 
         Vector3 vertex[3] = {
             globalVertices[index0],
@@ -347,41 +435,41 @@ void renderCube(Vector3 position, Vector3 size, Colour3 baseColour) {
     }
 }
 
-int addCube(Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    cubes.push_back(CreateCube(position, size, colour, anchored));
-    return (int)cubes.size() - 1;
+int addCube(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
+    worldParts.push_back(CreateCube(shape, position, size, colour, anchored));
+    return (int)worldParts.size() - 1;
 }
 
 void renderScene() {
-    for (int i = 0; i < cubes.size(); i++) {
-        const StructPart& cube = cubes[i];
-        renderCube(cube.position, cube.size, cube.colour);
+    for (int i = 0; i < worldParts.size(); i++) {
+        const StructPart& cube = worldParts[i];
+        renderCube(cube.shape, cube.position, cube.size, cube.colour);
     }
 }
 
 bool intersectAABB(int a, int b) {
     return
-        (cubes[a].position.x - (cubes[a].size.x * 0.5f) <= cubes[b].position.x + (cubes[b].size.x * 0.5f)) &&
-        (cubes[a].position.x + (cubes[a].size.x * 0.5f) >= cubes[b].position.x - (cubes[b].size.x * 0.5f)) &&
+        (worldParts[a].position.x - (worldParts[a].size.x * 0.5f) <= worldParts[b].position.x + (worldParts[b].size.x * 0.5f)) &&
+        (worldParts[a].position.x + (worldParts[a].size.x * 0.5f) >= worldParts[b].position.x - (worldParts[b].size.x * 0.5f)) &&
 
-        (cubes[a].position.y - (cubes[a].size.y * 0.5f) <= cubes[b].position.y + (cubes[b].size.y * 0.5f)) &&
-        (cubes[a].position.y + (cubes[a].size.y * 0.5f) >= cubes[b].position.y - (cubes[b].size.y * 0.5f)) &&
+        (worldParts[a].position.y - (worldParts[a].size.y * 0.5f) <= worldParts[b].position.y + (worldParts[b].size.y * 0.5f)) &&
+        (worldParts[a].position.y + (worldParts[a].size.y * 0.5f) >= worldParts[b].position.y - (worldParts[b].size.y * 0.5f)) &&
 
-        (cubes[a].position.z - (cubes[a].size.z * 0.5f) <= cubes[b].position.z + (cubes[b].size.z * 0.5f)) &&
-        (cubes[a].position.z + (cubes[a].size.z * 0.5f) >= cubes[b].position.z - (cubes[b].size.z * 0.5f));
+        (worldParts[a].position.z - (worldParts[a].size.z * 0.5f) <= worldParts[b].position.z + (worldParts[b].size.z * 0.5f)) &&
+        (worldParts[a].position.z + (worldParts[a].size.z * 0.5f) >= worldParts[b].position.z - (worldParts[b].size.z * 0.5f));
 }
 
 void resolveAABB(int a, int b) {
     float delta[3] = {
-        cubes[a].position.x - cubes[b].position.x,
-        cubes[a].position.y - cubes[b].position.y,
-        cubes[a].position.z - cubes[b].position.z
+        worldParts[a].position.x - worldParts[b].position.x,
+        worldParts[a].position.y - worldParts[b].position.y,
+        worldParts[a].position.z - worldParts[b].position.z
     };
 
     float overlap[3] = {
-        (cubes[a].size.x + cubes[b].size.x) * 0.5f - fabsf(delta[0]),
-        (cubes[a].size.y + cubes[b].size.y) * 0.5f - fabsf(delta[1]),
-        (cubes[a].size.z + cubes[b].size.z) * 0.5f - fabsf(delta[2])
+        (worldParts[a].size.x + worldParts[b].size.x) * 0.5f - fabsf(delta[0]),
+        (worldParts[a].size.y + worldParts[b].size.y) * 0.5f - fabsf(delta[1]),
+        (worldParts[a].size.z + worldParts[b].size.z) * 0.5f - fabsf(delta[2])
     };
 
     int axis = 0;
@@ -392,37 +480,40 @@ void resolveAABB(int a, int b) {
     float push[3] = {0.0f, 0.0f, 0.0f};
     push[axis] = pushAmount;
 
-    float weightA = (cubes[a].anchored) ? 0.0f : ((cubes[b].anchored) ? 1.0f : 0.5f);
-    float weightB = (cubes[b].anchored) ? 0.0f : ((cubes[a].anchored) ? 1.0f : 0.5f);
+    float weightA = (worldParts[a].anchored) ? 0.0f : ((worldParts[b].anchored) ? 1.0f : 0.5f);
+    float weightB = (worldParts[b].anchored) ? 0.0f : ((worldParts[a].anchored) ? 1.0f : 0.5f);
 
-    cubes[a].position.x += push[0] * weightA;
-    cubes[a].position.y += push[1] * weightA;
-    cubes[a].position.z += push[2] * weightA;
+    worldParts[a].position.x += push[0] * weightA;
+    worldParts[a].position.y += push[1] * weightA;
+    worldParts[a].position.z += push[2] * weightA;
 
-    cubes[b].position.x -= push[0] * weightB;
-    cubes[b].position.y -= push[1] * weightB;
-    cubes[b].position.z -= push[2] * weightB;
+    worldParts[b].position.x -= push[0] * weightB;
+    worldParts[b].position.y -= push[1] * weightB;
+    worldParts[b].position.z -= push[2] * weightB;
 
-    if (weightA > 0.0f) (&cubes[a].linearVelocity.x)[axis] = 0.0f;
-    if (weightB > 0.0f) (&cubes[b].linearVelocity.x)[axis] = 0.0f;
+    if (weightA > 0.0f) (&worldParts[a].linearVelocity.x)[axis] = 0.0f;
+    if (weightB > 0.0f) (&worldParts[b].linearVelocity.x)[axis] = 0.0f;
 }
 
 void checkCollisions() {
     grounded = false;
-    size_t cubeCount = cubes.size();
+    size_t cubeCount = worldParts.size();
     for (size_t i = 0; i < cubeCount; i++) {
         for (size_t j = i + 1; j < cubeCount; j++) {
-            if (cubes[i].anchored && cubes[j].anchored) {
+            if (worldParts[i].anchored && worldParts[j].anchored) {
+                continue;
+            }
+            if (worldParts[i].shape == PartShape::Plane || worldParts[j].shape == PartShape::Plane) {
                 continue;
             }
             if (intersectAABB(i, j)) {
-                float AY = cubes[i].position.y;
-                float BY = cubes[j].position.y;
+                float AY = worldParts[i].position.y;
+                float BY = worldParts[j].position.y;
                 resolveAABB(i, j);
-                if (cubes[i].position.y > AY && i == Humanoid) {
+                if (worldParts[i].position.y > AY && i == Humanoid) {
                     grounded = true;
                 }
-                if (cubes[j].position.y > BY && j == Humanoid) {
+                if (worldParts[j].position.y > BY && j == Humanoid) {
                     grounded = true;
                 }
             }
@@ -431,8 +522,8 @@ void checkCollisions() {
 }
 
 void processPhysics(float deltaTime) {
-    for (int i = 0; i < cubes.size(); i++) {
-        StructPart* cube = &cubes[i];
+    for (int i = 0; i < worldParts.size(); i++) {
+        StructPart* cube = &worldParts[i];
         if (cube->anchored) {
             continue;
         }
@@ -453,7 +544,7 @@ void processPhysics(float deltaTime) {
         cube->position.z += cube->linearVelocity.z * deltaTime;
     }
     checkCollisions();
-    std::cout << cubes[Humanoid].linearVelocity.y << std::endl;
+    std::cout << worldParts[Humanoid].linearVelocity.y << std::endl;
 }
 
 void rotateCamera(float yaw, float pitch, int player) {
@@ -485,9 +576,9 @@ void rotateCamera(float yaw, float pitch, int player) {
     Camera::CFrame.LookVector.z = look.z;
 
     if (Camera::cameratype == Camera::ORBIT_CAMERA || Camera::cameratype == Camera::FP_CAMERA) {
-        Camera::CFrame.Position.x = cubes[player].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
-        Camera::CFrame.Position.y = cubes[player].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
-        Camera::CFrame.Position.z = cubes[player].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
+        Camera::CFrame.Position.x = worldParts[player].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
+        Camera::CFrame.Position.y = worldParts[player].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
+        Camera::CFrame.Position.z = worldParts[player].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
     }
 }
 
@@ -514,9 +605,9 @@ void playerMovement(float deltaTime, int player) {
     float rLength = sqrtf((RightVector.x * RightVector.x) + (RightVector.y * RightVector.y) + (RightVector.z * RightVector.z));
     Vector3 right = {RightVector.x, 0.0f, RightVector.z};
 
-    float X = cubes[player].linearVelocity.x;
-    float Y = cubes[player].linearVelocity.y;
-    float Z = cubes[player].linearVelocity.z;
+    float X = worldParts[player].linearVelocity.x;
+    float Y = worldParts[player].linearVelocity.y;
+    float Z = worldParts[player].linearVelocity.z;
 
     if (keys['W']) {
         X = X + (forward.x * 200.0f * deltaTime);
@@ -541,7 +632,7 @@ void playerMovement(float deltaTime, int player) {
         }
     }
         
-    cubes[player].linearVelocity = {X, Y, Z};
+    worldParts[player].linearVelocity = {X, Y, Z};
     rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
 }
 
@@ -594,9 +685,10 @@ void saveToFile(const std::string& filename) {
         return;
     }
 
-    outFile << cubes.size() << "\n";
-    for (const auto& cube : cubes) {
-        outFile << cube.position.x << " " << cube.position.y << " " << cube.position.z << " "
+    outFile << worldParts.size() << "\n";
+    for (const auto& cube : worldParts) {
+        outFile << static_cast<int>(cube.shape) << " "
+                << cube.position.x << " " << cube.position.y << " " << cube.position.z << " "
                 << cube.size.x << " " << cube.size.y << " " << cube.size.z << " "
                 << cube.colour.r << " " << cube.colour.g << " " << cube.colour.b << " "
                 << cube.anchored << "\n";
@@ -614,21 +706,26 @@ void openFile(const std::string& filename) {
         return;
     }
 
-    cubes.clear();
+    worldParts.clear();
     size_t cubeCount = 0;
     if (!(inFile >> cubeCount)) return;
 
     for (size_t i = 0; i < cubeCount; ++i) {
+        PartShape shape;
         Vector3 position;
         Vector3 size;
         Colour3 colour;
         bool anchored;
+        int shapeInt = 0;
 
-        if (inFile >> position.x >> position.y >> position.z
+        if (inFile >> shapeInt
+                   >> position.x >> position.y >> position.z
                    >> size.x >> size.y >> size.z
                    >> colour.r >> colour.g >> colour.b
                    >> anchored) {
-            cubes.push_back(CreateCube(position, size, colour, anchored));
+
+            shape = static_cast<PartShape>(shapeInt);
+            worldParts.push_back(CreateCube(shape, position, size, colour, anchored));
         }
     }
 
@@ -778,24 +875,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     //addCube({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addCube({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
-    addCube({0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
+    addCube(PartShape::Cube, {0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
 
-    addCube({0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube({0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    Humanoid = addCube({0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
+    addCube(PartShape::Cube, {0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addCube(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+
+    addCube(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
+
+    Humanoid = addCube(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
 
@@ -833,7 +933,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             fpsTimer += deltaTime;
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
-                snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, cubes.size());
+                snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, worldParts.size());
                 //addCube({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
@@ -874,6 +974,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ReleaseDC(hwnd, hdc);
     free(frameBuffer);
     free(zBuffer);
-    cubes.clear();
+    worldParts.clear();
     return 0;
 }
