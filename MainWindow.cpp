@@ -2,10 +2,6 @@
 // Graphicality Engine is propriatary software, All contents of Graphicality must not be reproduced.
 // Source may be used for educational purposes.
 
-// Make some sort of class for cube/sphere/wedge etc. in addCube maybe?
-// In renderCube, load in the vertices and faces according to the class.
-// Please figure out how to load meshes. Maybe have an ID like RBX or a filepath and if ID/filepath not, load a cube.
-
 #include <Windows.h>
 #include <iostream>
 #include <fstream>
@@ -62,7 +58,7 @@ float cameraDistance = 5.0f;
 int Humanoid;
 bool grounded = false;
 
-StructPart CreateCube(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
+StructPart CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
     return StructPart{shape, position, size, colour, {0.0f, 0.0f, 0.0f}, anchored};
 }
 
@@ -155,6 +151,24 @@ Vector3 rotateVector3(Vector3 vertex, Vector3 rotation) {
     return Vector3{x3, y3, z2};
 }
 
+Vector3 LookAtCamera(Vector3 position) {
+        float tx = position.x - Camera::CFrame.Position.x;
+        float ty = position.y - Camera::CFrame.Position.y;
+        float tz = position.z - Camera::CFrame.Position.z;
+        Vector3 rawLV = {tx, ty, tz};
+
+        Vector3 lV = Normalize(rawLV);
+        Vector3 uV = {0, 1, 0};
+        Vector3 rV = Normalize(crossProduct3D(uV, lV));
+        Vector3 nuV = Normalize(crossProduct3D(lV, rV));
+
+        float rx = std::asin(-lV.y); // Pitch
+        float ry = -std::atan2(lV.x, lV.z); // Yaw
+        float rz = std::atan2(rV.y, uV.y); // Roll
+
+        return Vector3{rx, ry, rz};
+}
+
 void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, Colour3 colour1, Colour3 colour2, Colour3 colour3) {
     float area = crossProduct(x0, y0, x1, y1, x2, y2);
     if (area == 0) return;
@@ -215,7 +229,7 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
     }
 }
 
-void renderCube(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
+void CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
     float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) * 0.5f));
     float nearPlaneZ = 0.5f;
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
@@ -228,25 +242,11 @@ void renderCube(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
     std::vector<Colour3> vertexColours(vertexCount);
     size_t faceCount = partMesh.faces.size();
 
-    Vector3 rotation;
+    Vector3 rotation= {0.0f, 0.0f, 0.0f};
 
     if (shape == PartShape::Plane) {
-        float tx = position.x - Camera::CFrame.Position.x;
-        float ty = position.y - Camera::CFrame.Position.y;
-        float tz = position.z - Camera::CFrame.Position.z;
-        Vector3 rawLV = {tx, ty, tz};
-
-        Vector3 lV = Normalize(rawLV);
-        Vector3 uV = {0, 1, 0};
-        Vector3 rV = Normalize(crossProduct3D(uV, lV));
-        Vector3 nuV = Normalize(crossProduct3D(lV, rV));
-
-        float rx = std::asin(-lV.y); // Pitch
-        float ry = -std::atan2(lV.x, lV.z); // Yaw
-        float rz = std::atan2(rV.y, uV.y); // Roll
-
-        rotation = {rx, ry, rz};
-        rotation.x += radians(-90.0f);
+        rotation = LookAtCamera(position);
+        rotation.x += radians(-90.0f); // Offset LookAtCamera by 90 degrees (Radians)
     }
     
     for (size_t i = 0; i < vertexCount; i++) {
@@ -256,23 +256,14 @@ void renderCube(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
             partMesh.vertices[i][2] * size.z
         };
 
-        Vector3 worldPosition;
-        if (shape == PartShape::Plane) {
-            Vector3 rotatedVertex = rotateVector3(localVertex, rotation);
+        Vector3 rotatedVertex = rotateVector3(localVertex, rotation);
 
-            // Get position relative to world
-            worldPosition = {
-                position.x + rotatedVertex.x,
-                position.y + rotatedVertex.y,
-                position.z + rotatedVertex.z
-            };
-        } else {
-            worldPosition = {
-                position.x + localVertex.x,
-                position.y + localVertex.y,
-                position.z + localVertex.z
-            };
-        }
+        // Get position relative to world
+        Vector3 worldPosition = {
+            position.x + rotatedVertex.x,
+            position.y + rotatedVertex.y,
+            position.z + rotatedVertex.z
+        };
 
         // Normal
         Vector3 localNormal = {
@@ -435,15 +426,15 @@ void renderCube(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
     }
 }
 
-int addCube(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    worldParts.push_back(CreateCube(shape, position, size, colour, anchored));
+int addPart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
+    worldParts.push_back(CreatePart(shape, position, size, colour, anchored));
     return (int)worldParts.size() - 1;
 }
 
 void renderScene() {
     for (int i = 0; i < worldParts.size(); i++) {
-        const StructPart& cube = worldParts[i];
-        renderCube(cube.shape, cube.position, cube.size, cube.colour);
+        const StructPart& part = worldParts[i];
+        CreatePart(part.shape, part.position, part.size, part.colour);
     }
 }
 
@@ -497,9 +488,9 @@ void resolveAABB(int a, int b) {
 
 void checkCollisions() {
     grounded = false;
-    size_t cubeCount = worldParts.size();
-    for (size_t i = 0; i < cubeCount; i++) {
-        for (size_t j = i + 1; j < cubeCount; j++) {
+    size_t partCount = worldParts.size();
+    for (size_t i = 0; i < partCount; i++) {
+        for (size_t j = i + 1; j < partCount; j++) {
             if (worldParts[i].anchored && worldParts[j].anchored) {
                 continue;
             }
@@ -523,25 +514,25 @@ void checkCollisions() {
 
 void processPhysics(float deltaTime) {
     for (int i = 0; i < worldParts.size(); i++) {
-        StructPart* cube = &worldParts[i];
-        if (cube->anchored) {
+        StructPart* part = &worldParts[i];
+        if (part->anchored) {
             continue;
         }
 
-        // Cube holds the value of the current cube, "i" holds the cube in cube count
+        // part holds the value of the current part, "i" holds the part in part count
         //if (i != Humanoid) {
         //    return;
         //}
 
-        cube->linearVelocity.x *= expf(-10.0f * deltaTime);
-        cube->linearVelocity.z *= expf(-10.0f * deltaTime);
+        part->linearVelocity.x *= expf(-10.0f * deltaTime);
+        part->linearVelocity.z *= expf(-10.0f * deltaTime);
 
         float gravity = -50.0f;
-        cube->linearVelocity.y += gravity * deltaTime;
+        part->linearVelocity.y += gravity * deltaTime;
 
-        cube->position.x += cube->linearVelocity.x * deltaTime;
-        cube->position.y += cube->linearVelocity.y * deltaTime;
-        cube->position.z += cube->linearVelocity.z * deltaTime;
+        part->position.x += part->linearVelocity.x * deltaTime;
+        part->position.y += part->linearVelocity.y * deltaTime;
+        part->position.z += part->linearVelocity.z * deltaTime;
     }
     checkCollisions();
     std::cout << worldParts[Humanoid].linearVelocity.y << std::endl;
@@ -686,12 +677,12 @@ void saveToFile(const std::string& filename) {
     }
 
     outFile << worldParts.size() << "\n";
-    for (const auto& cube : worldParts) {
-        outFile << static_cast<int>(cube.shape) << " "
-                << cube.position.x << " " << cube.position.y << " " << cube.position.z << " "
-                << cube.size.x << " " << cube.size.y << " " << cube.size.z << " "
-                << cube.colour.r << " " << cube.colour.g << " " << cube.colour.b << " "
-                << cube.anchored << "\n";
+    for (const auto& part : worldParts) {
+        outFile << static_cast<int>(part.shape) << " "
+                << part.position.x << " " << part.position.y << " " << part.position.z << " "
+                << part.size.x << " " << part.size.y << " " << part.size.z << " "
+                << part.colour.r << " " << part.colour.g << " " << part.colour.b << " "
+                << part.anchored << "\n";
     }
 
     outFile.close();
@@ -707,10 +698,10 @@ void openFile(const std::string& filename) {
     }
 
     worldParts.clear();
-    size_t cubeCount = 0;
-    if (!(inFile >> cubeCount)) return;
+    size_t partCount = 0;
+    if (!(inFile >> partCount)) return;
 
-    for (size_t i = 0; i < cubeCount; ++i) {
+    for (size_t i = 0; i < partCount; ++i) {
         PartShape shape;
         Vector3 position;
         Vector3 size;
@@ -725,7 +716,7 @@ void openFile(const std::string& filename) {
                    >> anchored) {
 
             shape = static_cast<PartShape>(shapeInt);
-            worldParts.push_back(CreateCube(shape, position, size, colour, anchored));
+            worldParts.push_back(CreatePart(shape, position, size, colour, anchored));
         }
     }
 
@@ -873,29 +864,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ShowWindow(hwnd, nCmdShow);
 
-    //addCube({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
-    //addCube({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
+    //addPart({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
+    //addPart({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
 
-    addCube(PartShape::Cube, {0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addCube(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
 
-    addCube(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
 
-    Humanoid = addCube(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
+    Humanoid = addPart(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
 
@@ -934,7 +925,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
                 snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, worldParts.size());
-                //addCube({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
+                //addPart({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
                 fpsTimer -= 1;
