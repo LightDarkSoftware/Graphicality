@@ -15,14 +15,14 @@ int currentHeight = 600;
 
 bool keys[256] = { false };
 
-float nearPlaneZ = 0.5f;
-Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
-float ambientIntensity = 0.6f;
-
 struct Pixel { unsigned char r, g, b, a; };
 struct Vector3 { float x, y, z; };
 struct Vector2 { float x, y; };
 struct Colour3 { float r, g, b; };
+
+float nearPlaneZ = 0.5f;
+Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
+float ambientIntensity = 0.6f;
 
 using Vertex3D = std::array<float, 3>;
 using Face3D = std::vector<int>;
@@ -936,7 +936,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     addPart(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
     addPart(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
 
-    addPart(PartShape::Sphere, {0.0f, 16.5f, -40.0f}, {2.0f, 2.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Sphere, {0.0f, 16.5f, -40.0f}, {2.0f, 2.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, false);
 
     addPart(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
 
