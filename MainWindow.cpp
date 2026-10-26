@@ -34,6 +34,7 @@ struct MeshData {
 
 enum class PartShape {
     Cube,
+    Sphere,
     Plane
 };
 
@@ -94,6 +95,53 @@ MeshData PlaneMesh = {
         {3, 1, 2}, {2, 1, 0}
     }
 };
+
+MeshData SphereMesh;
+
+void createQuadSphere(float rad, int subdivisions) {
+    struct Direction {
+        Vector3 normal;
+        Vector3 right;
+        Vector3 up;
+    };
+
+    std::vector<Direction> directions = {
+        {{1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
+        {{-1, 0, 0}, {0, 0, -1}, {0, 1, 0}},
+        {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}},
+        {{0, -1, 0}, {-1, 0, 0}, {0, 0, 1}},
+        {{0, 0, 1}, {-1, 0, 0}, {0, 1, 0}},
+        {{0, 0, -1}, {1, 0, 0}, {0, 1, 0}},
+    };
+
+    for (const auto& dir : directions) {
+        int offset = static_cast<int>(SphereMesh.vertices.size());
+
+        for (int i = 0; i <= subdivisions; ++i) {
+            for (int j = 0; j <= subdivisions; ++j) {
+                float u = (static_cast<float>(i) / subdivisions) * 2.0f - 1.0f;
+                float v = (static_cast<float>(j) / subdivisions) * 2.0f - 1.0f;
+
+                float px = dir.normal.x + u * dir.right.x + v * dir.up.x;
+                float py = dir.normal.y + u * dir.right.y + v * dir.up.y;
+                float pz = dir.normal.z + u * dir.right.z + v * dir.up.z;
+
+                float mag = std::sqrt(px * px + py * py + pz * pz);
+
+                SphereMesh.vertices.push_back({(px / mag) * rad, (py / mag) * rad, (pz / mag) * rad});
+
+                if (i < subdivisions && j < subdivisions) {
+                    int p1 = offset + i*(subdivisions+1)+j;
+                    int p2 = offset + i*(subdivisions+1)+j+1;
+                    int p3 = offset + (i+1)*(subdivisions+1)+j+1;
+                    int p4 = offset + (i+1)*(subdivisions+1)+j;
+                    SphereMesh.faces.push_back({p1, p3, p2});
+                    SphereMesh.faces.push_back({p1, p4, p3});
+                }
+            }
+        }
+    }
+}
 
 void clearScreen() {
     if (zBuffer != nullptr) {
@@ -229,13 +277,14 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
     }
 }
 
-void CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
+void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
     float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) * 0.5f));
     float nearPlaneZ = 0.5f;
     Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
-    float ambientIntensity = 0.5f;
+    float ambientIntensity = 0.6f;
 
-    const MeshData& partMesh = (shape == PartShape::Cube) ? CubeMesh : PlaneMesh;
+    const MeshData& partMesh = (shape == PartShape::Cube) ? CubeMesh :
+                               (shape == PartShape::Sphere) ? SphereMesh : PlaneMesh;
 
     size_t vertexCount = partMesh.vertices.size();
     std::vector<Vector3> globalVertices(vertexCount);
@@ -272,7 +321,7 @@ void CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
             partMesh.vertices[i][2]
         };
 
-        Vector3 worldNormal = Normalize(localNormal);
+        Vector3 worldNormal = Normalize(rotateVector3(localNormal, rotation));
 
         // Lighting
         Vector3 lightDirection = {
@@ -434,7 +483,7 @@ int addPart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, boo
 void renderScene() {
     for (int i = 0; i < worldParts.size(); i++) {
         const StructPart& part = worldParts[i];
-        CreatePart(part.shape, part.position, part.size, part.colour);
+        RenderPart(part.shape, part.position, part.size, part.colour);
     }
 }
 
@@ -864,6 +913,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ShowWindow(hwnd, nCmdShow);
 
+    createQuadSphere(0.5, 6);
+
     //addPart({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addPart({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
     addPart(PartShape::Cube, {0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
@@ -883,6 +934,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     addPart(PartShape::Cube, {0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
     addPart(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
     addPart(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+
+    addPart(PartShape::Sphere, {0.0f, 16.5f, -40.0f}, {2.0f, 2.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
 
     addPart(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
 
