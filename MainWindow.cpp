@@ -10,14 +10,14 @@
 #include <array>
 #include "Camera.h"
 
-double radians(double degrees) {
-    return degrees * (3.1415926535 / 180.0);
-}
-
 int currentWidth = 800;
 int currentHeight = 600;
 
 bool keys[256] = { false };
+
+float nearPlaneZ = 0.5f;
+Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
+float ambientIntensity = 0.6f;
 
 struct Pixel { unsigned char r, g, b, a; };
 struct Vector3 { float x, y, z; };
@@ -155,6 +155,10 @@ void clearScreen() {
     std::fill_n(frameBuffer, currentWidth * currentHeight, skyColour);
 }
 
+double radians(double degrees) {
+    return degrees * (3.1415926535 / 180.0);
+}
+
 float crossProduct(float ax, float ay, float bx, float by, float cx, float cy) {
     return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 }
@@ -279,9 +283,6 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
 
 void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
     float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) * 0.5f));
-    float nearPlaneZ = 0.5f;
-    Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
-    float ambientIntensity = 0.6f;
 
     const MeshData& partMesh = (shape == PartShape::Cube) ? CubeMesh :
                                (shape == PartShape::Sphere) ? SphereMesh : PlaneMesh;
@@ -291,7 +292,7 @@ void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
     std::vector<Colour3> vertexColours(vertexCount);
     size_t faceCount = partMesh.faces.size();
 
-    Vector3 rotation= {0.0f, 0.0f, 0.0f};
+    Vector3 rotation = {0.0f, 0.0f, 0.0f};
 
     if (shape == PartShape::Plane) {
         rotation = LookAtCamera(position);
