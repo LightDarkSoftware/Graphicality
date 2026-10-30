@@ -56,7 +56,7 @@ std::vector<StructPart> worldParts;
 
 float cameraDistance = 5.0f;
 
-int Humanoid;
+int Humanoid = -1;
 bool grounded = false;
 
 StructPart CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
@@ -488,6 +488,15 @@ void renderScene() {
     }
 }
 
+void Destroy(int part) {
+    worldParts.erase(worldParts.begin() + part);
+}
+
+void LoadCharacter() {
+    Humanoid = addPart(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
+    Camera::cameratype = Camera::ORBIT_CAMERA;
+}
+
 bool intersectAABB(int a, int b) {
     return
         (worldParts[a].position.x - (worldParts[a].size.x * 0.5f) <= worldParts[b].position.x + (worldParts[b].size.x * 0.5f)) &&
@@ -569,10 +578,11 @@ void processPhysics(float deltaTime) {
             continue;
         }
 
-        // part holds the value of the current part, "i" holds the part in part count
-        //if (i != Humanoid) {
-        //    return;
-        //}
+        /* part holds the value of the current part, "i" holds the part in part count
+        if (i != Humanoid) {
+            return;
+        }
+        */
 
         part->linearVelocity.x *= expf(-10.0f * deltaTime);
         part->linearVelocity.z *= expf(-10.0f * deltaTime);
@@ -585,10 +595,9 @@ void processPhysics(float deltaTime) {
         part->position.z += part->linearVelocity.z * deltaTime;
     }
     checkCollisions();
-    std::cout << worldParts[Humanoid].linearVelocity.y << std::endl;
 }
 
-void rotateCamera(float yaw, float pitch, int player) {
+void rotateCamera(float yaw, float pitch) {
     float lx = sinf(yaw) * cosf(pitch);
     float ly = sinf(pitch);
     float lz = -cosf(yaw) * cosf(pitch);
@@ -617,9 +626,11 @@ void rotateCamera(float yaw, float pitch, int player) {
     Camera::CFrame.LookVector.z = look.z;
 
     if (Camera::cameratype == Camera::ORBIT_CAMERA || Camera::cameratype == Camera::FP_CAMERA) {
-        Camera::CFrame.Position.x = worldParts[player].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
-        Camera::CFrame.Position.y = worldParts[player].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
-        Camera::CFrame.Position.z = worldParts[player].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
+        if (Humanoid != -1) {
+            Camera::CFrame.Position.x = worldParts[Humanoid].position.x - (Camera::CFrame.LookVector.x * cameraDistance);
+            Camera::CFrame.Position.y = worldParts[Humanoid].position.y - (Camera::CFrame.LookVector.y * cameraDistance);
+            Camera::CFrame.Position.z = worldParts[Humanoid].position.z - (Camera::CFrame.LookVector.z * cameraDistance);
+        }
     }
 }
 
@@ -630,7 +641,7 @@ void mouseHandler(float mouseX, float mouseY) {
     Camera::CFrame.pitch = fmax(radians(-80), fmin(radians(80), Camera::CFrame.pitch - dy));
     lastMouse.x = mouseX;
     lastMouse.y = mouseY;
-    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
 }
 
 void playerMovement(float deltaTime, int player) {
@@ -672,9 +683,9 @@ void playerMovement(float deltaTime, int player) {
             grounded = false;
         }
     }
-        
+
     worldParts[player].linearVelocity = {X, Y, Z};
-    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, player);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
 }
 
 void processMovement(float deltaTime) {
@@ -727,7 +738,11 @@ void saveToFile(const std::string& filename) {
     }
 
     outFile << worldParts.size() << "\n";
-    for (const auto& part : worldParts) {
+
+    for (size_t i = 0; i < worldParts.size(); ++i) {
+        if (static_cast<int>(i) == Humanoid) continue;
+        const auto& part = worldParts[i];
+
         outFile << static_cast<int>(part.shape) << " "
                 << part.position.x << " " << part.position.y << " " << part.position.z << " "
                 << part.size.x << " " << part.size.y << " " << part.size.z << " "
@@ -747,6 +762,7 @@ void openFile(const std::string& filename) {
         return;
     }
 
+    Humanoid = -1;
     worldParts.clear();
     size_t partCount = 0;
     if (!(inFile >> partCount)) return;
@@ -769,6 +785,7 @@ void openFile(const std::string& filename) {
             worldParts.push_back(CreatePart(shape, position, size, colour, anchored));
         }
     }
+    LoadCharacter();
 
     inFile.close();
     std::cout << "Sucessfully opened file: " << filename << std::endl;
@@ -829,6 +846,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 openFile("test.grfx");
             }
 
+            /* Just to test removing player
+            if (wParam == '3') {
+                Destroy(Humanoid);
+                Humanoid = -1;
+            }
+            */
+
             return 0;
         case WM_KEYUP:
             keys[wParam] = false;
@@ -849,20 +873,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         case WM_MOUSEWHEEL: {
             Vector3 look = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
+
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-                //Camera::CFrame.Position.x += look.x * 10.0;
-                //Camera::CFrame.Position.y += look.y * 10.0;
-                //Camera::CFrame.Position.z += look.z * 10.0;
                 cameraDistance = fminf(80.0f, fmaxf(0.0f, floor(cameraDistance) / 1.5f));
             } else if (GET_WHEEL_DELTA_WPARAM(wParam) < 0) {
-                //Camera::CFrame.Position.x -= look.x * 10.0;
-                //Camera::CFrame.Position.y -= look.y * 10.0;
-                //Camera::CFrame.Position.z -= look.z * 10.0;
                 cameraDistance = fminf(80, fmaxf(0.0f, cameraDistance * 1.5f));
                 if (cameraDistance == 0) {
                     cameraDistance = 1.5f;
                 }
             }
+
             if (Camera::cameratype != Camera::FREE_CAMERA) {
                 Camera::cameratype = (cameraDistance == 0) ? Camera::FP_CAMERA : Camera::ORBIT_CAMERA;
             }
@@ -937,16 +957,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     addPart(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
 
     addPart(PartShape::Sphere, {0.0f, 16.5f, -40.0f}, {2.0f, 2.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, false);
-
     addPart(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
 
-    Humanoid = addPart(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
+    // Tree c:
+    addPart(PartShape::Cube, {20.0f, 3.0f, -40.0f}, {1.0f, 5.0f, 1.0f}, {0.0f, 0.25f, 0.5f}, true);
+    addPart(PartShape::Sphere, {20.0f, 7.0f, -40.0f}, {5.0f, 5.0f, 5.0f}, {0.0f, 0.75f, 0.0f}, true);
+
+    LoadCharacter();
+
     Camera::CFrame.yaw = 0.0f;
     Camera::CFrame.pitch = radians(-45.0f);
 
-    Camera::cameratype = Camera::ORBIT_CAMERA;
-
-    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch, Humanoid);
+    rotateCamera(Camera::CFrame.yaw, Camera::CFrame.pitch);
 
     LARGE_INTEGER frequency;
     LARGE_INTEGER lastTime;
@@ -979,7 +1001,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
                 snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, worldParts.size());
-                //addPart({0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
+                //addPart(PartShape::Cube, {0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
                 fpsTimer -= 1;
@@ -987,10 +1009,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             clearScreen();
             processPhysics(deltaTime);
 
+            if (Humanoid == -1) {
+                Camera::cameratype = Camera::FREE_CAMERA;
+            }
             if (Camera::cameratype == Camera::FREE_CAMERA) {
                 processMovement(deltaTime);
             } else {
-                playerMovement(deltaTime, Humanoid);
+                if (Humanoid != -1) {
+                    playerMovement(deltaTime, Humanoid);
+                }
             }
             renderScene();
 
