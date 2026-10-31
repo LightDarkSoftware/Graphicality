@@ -43,7 +43,9 @@ struct StructPart {
     Vector3 position;
     Vector3 size;
     Colour3 colour;
+    float transparency;
     Vector3 linearVelocity;
+    bool canCollide;
     bool anchored;
 };
 
@@ -59,8 +61,8 @@ float cameraDistance = 5.0f;
 int Humanoid = -1;
 bool grounded = false;
 
-StructPart CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    return StructPart{shape, position, size, colour, {0.0f, 0.0f, 0.0f}, anchored};
+StructPart CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, float transparency, bool canCollide, bool anchored) {
+    return StructPart{shape, position, size, colour, transparency, {0.0f, 0.0f, 0.0f}, canCollide, anchored};
 }
 
 MeshData CubeMesh = {
@@ -221,9 +223,9 @@ Vector3 LookAtCamera(Vector3 position) {
         return Vector3{rx, ry, rz};
 }
 
-void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, Colour3 colour1, Colour3 colour2, Colour3 colour3) {
+void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, Colour3 colour1, Colour3 colour2, Colour3 colour3, float transparency) {
     float area = crossProduct(x0, y0, x1, y1, x2, y2);
-    if (area == 0) return;
+    if (area == 0.0f) return;
 
     int minX = (int)floorf(fmaxf(0.0f, fminf(x0, fminf(x1, x2))));
     int maxX = (int)ceilf(fminf((float)(currentWidth - 1), fmaxf(x0, fmaxf(x1, x2))));
@@ -262,13 +264,35 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
 
                 int index = y * currentWidth + x;
                 if (z <= zBuffer[index]) {
+                    /* Fix zBuffer transparency bug
+                    if (transparency >= 0.99) {
+                        zBuffer[index] = z;
+                    }
+                    */
+
                     zBuffer[index] = z;
+
                     float correction = z * 255.0f;
 
+                    unsigned char triR = (unsigned char)((w0 * colour1.r + w1 * colour2.r + w2 * colour3.r) * correction);
+                    unsigned char triG = (unsigned char)((w0 * colour1.g + w1 * colour2.g + w2 * colour3.g) * correction);
+                    unsigned char triB = (unsigned char)((w0 * colour1.b + w1 * colour2.b + w2 * colour3.b) * correction);
+
+                    float bgR = (float)frameBuffer[index].r;
+                    float bgG = (float)frameBuffer[index].g;
+                    float bgB = (float)frameBuffer[index].b;
+
+                    frameBuffer[index].r = (unsigned char)((triR * transparency) + (bgR * (1.0f - transparency)));
+                    frameBuffer[index].g = (unsigned char)((triG * transparency) + (bgG * (1.0f - transparency)));
+                    frameBuffer[index].b = (unsigned char)((triB * transparency) + (bgB * (1.0f - transparency)));
+                    frameBuffer[index].a = transparency * 255.0f;
+
+                    /* Old non transparent framebuffer
                     frameBuffer[index].r = (unsigned char)((w0 * colour1.r + w1 * colour2.r + w2 * colour3.r) * correction);
                     frameBuffer[index].g = (unsigned char)((w0 * colour1.g + w1 * colour2.g + w2 * colour3.g) * correction);
                     frameBuffer[index].b = (unsigned char)((w0 * colour1.b + w1 * colour2.b + w2 * colour3.b) * correction);
                     frameBuffer[index].a = 255.0f;
+                    */
                 }
             }
             w0 += w0_dx;
@@ -281,7 +305,7 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
     }
 }
 
-void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour) {
+void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseColour, float transparency) {
     float scaleFactor = currentHeight / (2.0f * tanf(radians(Camera::FieldOfView) * 0.5f));
 
     const MeshData& partMesh = (shape == PartShape::Cube) ? CubeMesh :
@@ -437,7 +461,8 @@ void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
                     screen[0].x, screen[0].y, screen[0].z,
                     screen[1].x, screen[1].y, screen[1].z,
                     screen[2].x, screen[2].y, screen[2].z,
-                    clippedColour[0], clippedColour[1], clippedColour[2]
+                    clippedColour[0], clippedColour[1], clippedColour[2],
+                    transparency
                 );
             }
         }
@@ -454,7 +479,8 @@ void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
                     screen[0].x, screen[0].y, screen[0].z,
                     screen[1].x, screen[1].y, screen[1].z,
                     screen[2].x, screen[2].y, screen[2].z,
-                    clippedColour[0], clippedColour[1], clippedColour[2]
+                    clippedColour[0], clippedColour[1], clippedColour[2],
+                    transparency
                 );
             }
 
@@ -469,22 +495,22 @@ void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
                     screen[0].x, screen[0].y, screen[0].z,
                     screen[2].x, screen[2].y, screen[2].z,
                     screen[3].x, screen[3].y, screen[3].z,
-                    clippedColour[0], clippedColour[2], clippedColour[3]
+                    clippedColour[0], clippedColour[2], clippedColour[3],
+                    transparency
                 );
             }
         }
     }
 }
 
-int addPart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, bool anchored) {
-    worldParts.push_back(CreatePart(shape, position, size, colour, anchored));
+int addPart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, float transparency, bool canCollide, bool anchored) {
+    worldParts.push_back(CreatePart(shape, position, size, colour, transparency, canCollide, anchored));
     return (int)worldParts.size() - 1;
 }
 
 void renderScene() {
-    for (int i = 0; i < worldParts.size(); i++) {
-        const StructPart& part = worldParts[i];
-        RenderPart(part.shape, part.position, part.size, part.colour);
+    for (const auto& part : worldParts) {
+        RenderPart(part.shape, part.position, part.size, part.colour, part.transparency);
     }
 }
 
@@ -493,7 +519,7 @@ void Destroy(int part) {
 }
 
 void LoadCharacter() {
-    Humanoid = addPart(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, false);
+    Humanoid = addPart(PartShape::Cube, {0.0f, 3.0f, 0.0f}, {2.0f, 5.0f, 1.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, false);
     Camera::cameratype = Camera::ORBIT_CAMERA;
 }
 
@@ -553,7 +579,7 @@ void checkCollisions() {
             if (worldParts[i].anchored && worldParts[j].anchored) {
                 continue;
             }
-            if (worldParts[i].shape == PartShape::Plane || worldParts[j].shape == PartShape::Plane) {
+            if (worldParts[i].canCollide == false || worldParts[j].canCollide == false) {
                 continue;
             }
             if (intersectAABB(i, j)) {
@@ -747,6 +773,8 @@ void saveToFile(const std::string& filename) {
                 << part.position.x << " " << part.position.y << " " << part.position.z << " "
                 << part.size.x << " " << part.size.y << " " << part.size.z << " "
                 << part.colour.r << " " << part.colour.g << " " << part.colour.b << " "
+                << part.transparency << " "
+                << part.canCollide << " "
                 << part.anchored << "\n";
     }
 
@@ -772,6 +800,8 @@ void openFile(const std::string& filename) {
         Vector3 position;
         Vector3 size;
         Colour3 colour;
+        float transparency;
+        bool canCollide;
         bool anchored;
         int shapeInt = 0;
 
@@ -779,10 +809,12 @@ void openFile(const std::string& filename) {
                    >> position.x >> position.y >> position.z
                    >> size.x >> size.y >> size.z
                    >> colour.r >> colour.g >> colour.b
+                   >> transparency
+                   >> canCollide
                    >> anchored) {
 
             shape = static_cast<PartShape>(shapeInt);
-            worldParts.push_back(CreatePart(shape, position, size, colour, anchored));
+            worldParts.push_back(CreatePart(shape, position, size, colour, transparency, canCollide, anchored));
         }
     }
     LoadCharacter();
@@ -938,30 +970,32 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     //addPart({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addPart({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, true);
+    addPart(PartShape::Cube, {0.0f, 0.0f, 0.0f}, {100.0f, 1.0f, 100.0f}, {0.0f, 0.75f, 0.0f}, 1.0f, true, true);
 
-    addPart(PartShape::Cube, {0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
-    addPart(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Cube, {0.0f, 1.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 2.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 3.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 4.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 5.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 6.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 7.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 8.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 9.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 10.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 11.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 12.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 13.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 14.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
+    addPart(PartShape::Cube, {0.0f, 15.0f, -40.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 1.0f, true, true);
 
-    addPart(PartShape::Sphere, {0.0f, 16.5f, -40.0f}, {2.0f, 2.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, false);
-    addPart(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, true);
+    addPart(PartShape::Sphere, {0.0f, 16.5f, -40.0f}, {2.0f, 2.0f, 2.0f}, {0.75f, 0.75f, 0.75f}, 0.5f, true, false);
+    addPart(PartShape::Plane, {10.0f, 4.0f, -40.0f}, {5.0f, 0.0f, 3.5f}, {0.75f, 0.75f, 0.75f}, 0.7f, false, true);
+
+    addPart(PartShape::Cube, {-10.0f, 3.5f, -40.0f}, {4.0f, 6.0f, 1.0f}, {0.0f, 0.25f, 0.5f}, 1.0f, false, true);
 
     // Tree c:
-    addPart(PartShape::Cube, {20.0f, 3.0f, -40.0f}, {1.0f, 5.0f, 1.0f}, {0.0f, 0.25f, 0.5f}, true);
-    addPart(PartShape::Sphere, {20.0f, 7.0f, -40.0f}, {5.0f, 5.0f, 5.0f}, {0.0f, 0.75f, 0.0f}, true);
+    addPart(PartShape::Cube, {20.0f, 3.0f, -40.0f}, {1.0f, 5.0f, 1.0f}, {0.0f, 0.25f, 0.5f}, 1.0f, true, true);
+    addPart(PartShape::Sphere, {20.0f, 7.0f, -40.0f}, {5.0f, 5.0f, 5.0f}, {0.0f, 0.75f, 0.0f}, 1.0f, true, true);
 
     LoadCharacter();
 
