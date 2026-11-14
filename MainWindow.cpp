@@ -24,6 +24,10 @@ float nearPlaneZ = 0.5f;
 Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
 float ambientIntensity = 0.6f;
 
+float specularStrength = 0.8f;
+float shininess = 50.0f;
+Colour3 lightColour = {1.0f, 1.0f, 1.0f};
+
 using Vertex3D = std::array<float, 3>;
 using Face3D = std::vector<int>;
 
@@ -206,21 +210,21 @@ Vector3 rotateVector3(Vector3 vertex, Vector3 rotation) {
 }
 
 Vector3 LookAtCamera(Vector3 position) {
-        float tx = position.x - Camera::CFrame.Position.x;
-        float ty = position.y - Camera::CFrame.Position.y;
-        float tz = position.z - Camera::CFrame.Position.z;
-        Vector3 rawLV = {tx, ty, tz};
+    float tx = position.x - Camera::CFrame.Position.x;
+    float ty = position.y - Camera::CFrame.Position.y;
+    float tz = position.z - Camera::CFrame.Position.z;
+    Vector3 rawLV = {tx, ty, tz};
 
-        Vector3 lV = Normalize(rawLV);
-        Vector3 uV = {0, 1, 0};
-        Vector3 rV = Normalize(crossProduct3D(uV, lV));
-        Vector3 nuV = Normalize(crossProduct3D(lV, rV));
+    Vector3 lV = Normalize(rawLV);
+    Vector3 uV = {0, 1, 0};
+    Vector3 rV = Normalize(crossProduct3D(uV, lV));
+    Vector3 nuV = Normalize(crossProduct3D(lV, rV));
 
-        float rx = std::asin(-lV.y); // Pitch
-        float ry = -std::atan2(lV.x, lV.z); // Yaw
-        float rz = std::atan2(rV.y, uV.y); // Roll
+    float rx = std::asin(-lV.y); // Pitch
+    float ry = -std::atan2(lV.x, lV.z); // Yaw
+    float rz = std::atan2(rV.y, uV.y); // Roll
 
-        return Vector3{rx, ry, rz};
+    return Vector3{rx, ry, rz};
 }
 
 void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z1, float x2, float y2, float z2, Colour3 colour1, Colour3 colour2, Colour3 colour3, float transparency) {
@@ -349,25 +353,39 @@ void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
         Vector3 worldNormal = Normalize(rotateVector3(localNormal, rotation));
 
         // Lighting
-        Vector3 lightDirection = {
+        Vector3 lightDirection = Normalize({
             lightPosition.x - worldPosition.x,
             lightPosition.y - worldPosition.y,
             lightPosition.z - worldPosition.z
-        };
-
-        float lightMagnitude = sqrtf(lightDirection.x*lightDirection.x + lightDirection.y*lightDirection.y + lightDirection.z*lightDirection.z);
-
-        if (lightMagnitude > 0.0f) {
-            lightDirection.x /= lightMagnitude; lightDirection.y /= lightMagnitude; lightDirection.z /= lightMagnitude;
-        }
+        });
 
         float dot = (worldNormal.x * lightDirection.x) + (worldNormal.y * lightDirection.y) + (worldNormal.z * lightDirection.z);
-        float intensity = dot > 0.0f ? dot : 0.0f;
-        float final = ambientIntensity + (1.0f - ambientIntensity) * intensity;
+        float diffuseIntensity = dot > 0.0f ? dot : 0.0f;
 
-        vertexColours[i].r = baseColour.r * final;
-        vertexColours[i].g = baseColour.g * final;
-        vertexColours[i].b = baseColour.b * final;
+        float specularIntensity = 0.0f;
+        if (diffuseIntensity > 0.0f) {
+            Vector3 viewDirection = Normalize({
+                Camera::CFrame.Position.x - worldPosition.x,
+                Camera::CFrame.Position.y - worldPosition.y,
+                Camera::CFrame.Position.z - worldPosition.z
+            });
+
+            Vector3 halfDirection = Normalize({
+                lightDirection.x + viewDirection.x,
+                lightDirection.y + viewDirection.y,
+                lightDirection.z + viewDirection.z
+            });
+
+            float specularDot = (worldNormal.x * halfDirection.x) + (worldNormal.y * halfDirection.y) + (worldNormal.z * halfDirection.z);
+            if (specularDot > 0.0f) {
+                specularIntensity = specularStrength * powf(specularDot, shininess);
+            }
+        }
+        float final = ambientIntensity + (1.0f - ambientIntensity) * diffuseIntensity;
+
+        vertexColours[i].r = fminf(1.0f, (baseColour.r * final) + (lightColour.r * specularIntensity));
+        vertexColours[i].g = fminf(1.0f, (baseColour.g * final) + (lightColour.g * specularIntensity));
+        vertexColours[i].b = fminf(1.0f, (baseColour.b * final) + (lightColour.b * specularIntensity));
 
         // Get position relative to camera
         Vector3 offset = {
