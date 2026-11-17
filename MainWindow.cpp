@@ -34,6 +34,7 @@ using Face3D = std::vector<int>;
 struct MeshData {
     std::vector<Vertex3D> vertices;
     std::vector<Face3D> faces;
+    std::vector<Vertex3D> normals;
 };
 
 enum class PartShape {
@@ -69,26 +70,7 @@ StructPart CreatePart(PartShape shape, Vector3 position, Vector3 size, Colour3 c
     return StructPart{shape, position, size, colour, transparency, {0.0f, 0.0f, 0.0f}, canCollide, anchored};
 }
 
-MeshData CubeMesh = {
-    {
-        { 0.5f,  0.5f, -0.5f},
-        {-0.5f,  0.5f, -0.5f},
-        { 0.5f, -0.5f, -0.5f},
-        {-0.5f, -0.5f, -0.5f},
-        { 0.5f,  0.5f,  0.5f},
-        {-0.5f,  0.5f,  0.5f},
-        { 0.5f, -0.5f,  0.5f},
-        {-0.5f, -0.5f,  0.5f}
-    },
-    {
-        {4, 6, 5}, {5, 6, 7},
-        {1, 3, 0}, {0, 3, 2},
-        {5, 7, 1}, {1, 7, 3},
-        {0, 2, 4}, {4, 2, 6},
-        {5, 1, 4}, {4, 1, 0},
-        {2, 3, 6}, {6, 3, 7}
-    }
-};
+MeshData CubeMesh;
 
 MeshData PlaneMesh = {
     {
@@ -99,10 +81,50 @@ MeshData PlaneMesh = {
     },
     {
         {3, 1, 2}, {2, 1, 0}
+    },
+    {
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f}
     }
 };
 
 MeshData SphereMesh;
+
+void createCubeMesh(Vector3 size = {1.0f, 1.0f, 1.0f}) {
+    float hx = size.x * 0.5f;
+    float hy = size.y * 0.5f;
+    float hz = size.z * 0.5f;
+
+    std::array<std::array<Vertex3D, 4>, 6> faceQuads = {{
+        {{{ hx,  hy,  hz}, { hx, -hy,  hz}, { hx, -hy, -hz}, { hx,  hy, -hz}}},
+        {{{-hx,  hy, -hz}, {-hx, -hy, -hz}, {-hx, -hy,  hz}, {-hx,  hy,  hz}}},
+        {{{-hx,  hy, -hz}, {-hx,  hy,  hz}, { hx,  hy,  hz}, { hx,  hy, -hz}}},
+        {{{-hx, -hy,  hz}, {-hx, -hy, -hz}, { hx, -hy, -hz}, { hx, -hy,  hz}}},
+        {{{-hx,  hy,  hz}, {-hx, -hy,  hz}, { hx, -hy,  hz}, { hx,  hy,  hz}}},
+        {{{ hx,  hy, -hz}, { hx, -hy, -hz}, {-hx, -hy, -hz}, {-hx,  hy, -hz}}}
+    }};
+
+    std::array<Vertex3D, 6> faceNormals = {{
+        { 1.0f,  0.0f,  0.0f},
+        {-1.0f,  0.0f,  0.0f},
+        { 0.0f,  1.0f,  0.0f},
+        { 0.0f, -1.0f,  0.0f},
+        { 0.0f,  0.0f,  1.0f},
+        { 0.0f,  0.0f, -1.0f}
+    }};
+
+    for (int i = 0; i < 6; ++i) {
+        int base = i * 4;
+        for (const auto& v : faceQuads[i]) {
+            CubeMesh.vertices.push_back(v);
+            CubeMesh.normals.push_back(faceNormals[i]);
+        }
+        CubeMesh.faces.push_back({base + 0, base + 2, base + 1});
+        CubeMesh.faces.push_back({base + 0, base + 3, base + 2});
+    }
+}
 
 void createQuadSphere(float rad, int subdivisions) {
     struct Direction {
@@ -134,7 +156,12 @@ void createQuadSphere(float rad, int subdivisions) {
 
                 float mag = std::sqrt(px * px + py * py + pz * pz);
 
-                SphereMesh.vertices.push_back({(px / mag) * rad, (py / mag) * rad, (pz / mag) * rad});
+                float nx = px / mag;
+                float ny = py / mag;
+                float nz = pz / mag;
+
+                SphereMesh.vertices.push_back({nx * rad, ny * rad, nz * rad});
+                SphereMesh.normals.push_back({nx, ny, nz});
 
                 if (i < subdivisions && j < subdivisions) {
                     int p1 = offset + i*(subdivisions+1)+j;
@@ -345,9 +372,9 @@ void RenderPart(PartShape shape, Vector3 position, Vector3 size, Colour3 baseCol
 
         // Normal
         Vector3 localNormal = {
-            partMesh.vertices[i][0],
-            partMesh.vertices[i][1],
-            partMesh.vertices[i][2]
+            partMesh.normals[i][0],
+            partMesh.normals[i][1],
+            partMesh.normals[i][2]
         };
 
         Vector3 worldNormal = Normalize(rotateVector3(localNormal, rotation));
@@ -985,6 +1012,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ShowWindow(hwnd, nCmdShow);
 
     createQuadSphere(0.5, 6);
+    createCubeMesh();
 
     //addPart({0.0f, 0.5f, 0.0f}, {4.0f, 1.0f, 2.0f}, {0.75f, 0.0f, 0.0f}, true);
     //addPart({2.0f, 1.0f, 1.0f}, {4.0f, 1.0f, 2.0f}, {0.0f, 0.0f, 0.75f}, true);
