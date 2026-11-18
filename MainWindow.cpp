@@ -25,7 +25,7 @@ Vector3 lightPosition = {10.0f, 20.0f, -10.0f};
 float ambientIntensity = 0.6f;
 
 float specularStrength = 0.8f;
-float shininess = 50.0f;
+float shininess = 40.0f;
 Colour3 lightColour = {1.0f, 1.0f, 1.0f};
 
 using Vertex3D = std::array<float, 3>;
@@ -176,18 +176,6 @@ void createQuadSphere(float rad, int subdivisions) {
     }
 }
 
-void clearScreen() {
-    if (zBuffer != nullptr) {
-        std::fill_n(zBuffer, currentWidth * currentHeight, 10000.0f);
-    }
-    Pixel skyColour;
-    skyColour.b = 70;
-    skyColour.g = 100;
-    skyColour.r = 200;
-    skyColour.a = 255;
-    std::fill_n(frameBuffer, currentWidth * currentHeight, skyColour);
-}
-
 double radians(double degrees) {
     return degrees * (3.1415926535 / 180.0);
 }
@@ -214,6 +202,81 @@ Vector3 Normalize(Vector3 vector) {
         vector.z / magnitude
     };
     return normal;
+}
+
+void renderSkybox() {
+    if (zBuffer != nullptr) {
+        std::fill_n(zBuffer, currentWidth * currentHeight, 10000.0f);
+    }
+
+    float tanHalfFov = tanf((float)radians(Camera::FieldOfView) * 0.5f);
+    float aspectRatio = (float)currentWidth / (float)currentHeight;
+
+    Vector3 rightScaled = {
+        Camera::CFrame.RightVector.x * aspectRatio * tanHalfFov,
+        Camera::CFrame.RightVector.y * aspectRatio * tanHalfFov,
+        Camera::CFrame.RightVector.z * aspectRatio * tanHalfFov
+    };
+
+    Vector3 upScaled = {
+        Camera::CFrame.UpVector.x * tanHalfFov,
+        Camera::CFrame.UpVector.y * tanHalfFov,
+        Camera::CFrame.UpVector.z * tanHalfFov
+    };
+
+    Vector3 topLeft = {
+        Camera::CFrame.LookVector.x - rightScaled.x + upScaled.x,
+        Camera::CFrame.LookVector.y - rightScaled.y + upScaled.y,
+        Camera::CFrame.LookVector.z - rightScaled.z + upScaled.z
+    };
+
+    float invW = 2.0f / (float)currentWidth;
+    float invH = 2.0f / (float)currentHeight;
+    Vector3 stepX = {rightScaled.x * invW, rightScaled.y * invW, rightScaled.z * invW};
+    Vector3 stepY = {-upScaled.x * invH, -upScaled.y * invH, -upScaled.z * invH};
+
+    const Colour3 zenithColour = {200.0f, 100.0f, 70.0f};
+    const Colour3 horizonColour = {255.0f, 255.0f, 255.0f};
+    const Colour3 groundColour = {100.0f, 100.0f, 100.0f};
+
+    Vector3 rowRay = topLeft;
+
+    for (int y = 0; y < currentHeight; y++) {
+        Vector3 ray = rowRay;
+        Pixel* rowPixels = &frameBuffer[y * currentWidth];
+
+        for (int x = 0; x < currentWidth; x++) {
+            float lenSq = ray.x * ray.x + ray.y * ray.y + ray.z * ray.z;
+            float invLen = 1.0f / sqrt(lenSq);
+            float dirY = ray.y * invLen;
+
+            float r, g, b;
+            if (dirY >= 0.0f) {
+                float invT = 1.0f - dirY;
+                float t = 1.0f - (invT * invT);
+                r = horizonColour.r + (zenithColour.r - horizonColour.r) * t;
+                g = horizonColour.g + (zenithColour.g - horizonColour.g) * t;
+                b = horizonColour.b + (zenithColour.b - horizonColour.b) * t;
+            } else {
+                float t = (-dirY * 4.0f > 1.0f) ? 1.0f : (-dirY * 4.0f);
+                r = horizonColour.r + (groundColour.r - horizonColour.r) * t;
+                g = horizonColour.g + (groundColour.g - horizonColour.g) * t;
+                b = horizonColour.b + (groundColour.b - horizonColour.b) * t;
+            }
+
+            rowPixels[x].r = (r > 255.0f) ? 255 : (unsigned char)r;
+            rowPixels[x].g = (g > 255.0f) ? 255 : (unsigned char)g;
+            rowPixels[x].b = (b > 255.0f) ? 255 : (unsigned char)b;
+            rowPixels[x].a = 255;
+
+            ray.x += stepX.x;
+            ray.y += stepX.y;
+            ray.z += stepX.z;
+        }
+        rowRay.x += stepY.x;
+        rowRay.y += stepY.y;
+        rowRay.z += stepY.z;
+    }
 }
 
 Vector3 rotateVector3(Vector3 vertex, Vector3 rotation) {
@@ -245,7 +308,6 @@ Vector3 LookAtCamera(Vector3 position) {
     Vector3 lV = Normalize(rawLV);
     Vector3 uV = {0, 1, 0};
     Vector3 rV = Normalize(crossProduct3D(uV, lV));
-    Vector3 nuV = Normalize(crossProduct3D(lV, rV));
 
     float rx = std::asin(-lV.y); // Pitch
     float ry = -std::atan2(lV.x, lV.z); // Yaw
@@ -725,7 +787,6 @@ void playerMovement(float deltaTime, int player) {
     }
 
     Vector3 RightVector = {Camera::CFrame.RightVector.x, Camera::CFrame.RightVector.y, Camera::CFrame.RightVector.z};
-    float rLength = sqrtf((RightVector.x * RightVector.x) + (RightVector.y * RightVector.y) + (RightVector.z * RightVector.z));
     Vector3 right = {RightVector.x, 0.0f, RightVector.z};
 
     float X = worldParts[player].linearVelocity.x;
@@ -1081,12 +1142,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             if (fpsTimer >= 1) {
                 char titleBuffer[64];
                 snprintf(titleBuffer, sizeof(titleBuffer), "Graphicality Engine | FPS: %u | Parts: %u", frameCount, worldParts.size());
-                //addPart(PartShape::Cube, {0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, false); // Just a test for later
+                //addPart(PartShape::Cube, {0.0f, 30.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f}, 1.0f, true, false); // Just a test for later
                 SetWindowTextA(hwnd, titleBuffer);
                 frameCount = 0;
                 fpsTimer -= 1;
             }
-            clearScreen();
+            renderSkybox();
             processPhysics(deltaTime);
 
             if (Humanoid == -1) {
