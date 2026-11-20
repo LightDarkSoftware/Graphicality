@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <iostream>
 #include <fstream>
+#include <commdlg.h>
 #include <cmath>
 #include <vector>
 #include <array>
@@ -935,6 +936,40 @@ void openFile(const std::string& filename) {
     std::cout << "Sucessfully opened file: " << filename << std::endl;
 }
 
+std::string SaveFileDialog(HWND hwnd) {
+    char filename[MAX_PATH] = {0};
+    OPENFILENAMEA ofn = {0};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = "Graphicality File (*.grfx)\0*.grfx\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFile = filename;
+    ofn.lpstrDefExt = "grfx";
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_DONTADDTORECENT | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+
+    if (GetSaveFileNameA(&ofn)) {
+        return std::string(filename);
+    }
+    return "";
+}
+
+std::string OpenFileDialog(HWND hwnd) {
+    char filename[MAX_PATH] = {0};
+    OPENFILENAMEA ofn = {0};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = "Graphicality File (*.grfx)\0*.grfx\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFile = filename;
+    ofn.lpstrDefExt = "grfx";
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_DONTADDTORECENT;
+
+    if (GetOpenFileNameA(&ofn)) {
+        return std::string(filename);
+    }
+    return "";
+}
+
 // Create web protocol
 void registerProtocol() {
     wchar_t clientPath[MAX_PATH];
@@ -984,10 +1019,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 }
             }
             if (wParam == '1') {
-                saveToFile("test.grfx");
+                std::string filepath = SaveFileDialog(hwnd);
+                if (!filepath.empty()) {
+                    saveToFile(filepath);
+                }
             }
             if (wParam == '2') {
-                openFile("test.grfx");
+                std::string filepath = OpenFileDialog(hwnd);
+                if (!filepath.empty()) {
+                    openFile(filepath);
+                }
             }
 
             /* Just to test removing player
@@ -1140,6 +1181,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             QueryPerformanceCounter(&frameStartTime);
             deltaTime = (double)(frameStartTime.QuadPart - lastTime.QuadPart) / (double)frequency.QuadPart;
             lastTime = frameStartTime;
+
+            if (deltaTime > 0.05f) {
+                deltaTime = 0.05f;
+            }
 
             frameCount++;
             fpsTimer += deltaTime;
