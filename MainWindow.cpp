@@ -92,7 +92,9 @@ MeshData PlaneMesh = {
 
 MeshData SphereMesh;
 
-void createCubeMesh(Vector3 size = {1.0f, 1.0f, 1.0f}) {
+void createCubeMesh() {
+    Vector3 size = {1.0f, 1.0f, 1.0f};
+
     float hx = size.x * 0.5f;
     float hy = size.y * 0.5f;
     float hz = size.z * 0.5f;
@@ -659,23 +661,27 @@ void resolveAABB(int a, int b) {
     if (overlap[1] < overlap[axis]) axis = 1;
     if (overlap[2] < overlap[axis]) axis = 2;
 
-    float pushAmount = (delta[axis] > 0.0f) ? overlap[axis] : -overlap[axis];
-    float push[3] = {0.0f, 0.0f, 0.0f};
-    push[axis] = pushAmount;
+    float normal = (delta[axis] > 0.0f) ? 1.0f : -1.0f;
+    float pushAmount = overlap[axis] * normal;
 
     float weightA = (worldParts[a].anchored) ? 0.0f : ((worldParts[b].anchored) ? 1.0f : 0.5f);
     float weightB = (worldParts[b].anchored) ? 0.0f : ((worldParts[a].anchored) ? 1.0f : 0.5f);
 
-    worldParts[a].position.x += push[0] * weightA;
-    worldParts[a].position.y += push[1] * weightA;
-    worldParts[a].position.z += push[2] * weightA;
+    (&worldParts[a].position.x)[axis] += pushAmount * weightA;
+    (&worldParts[b].position.x)[axis] -= pushAmount * weightB;
 
-    worldParts[b].position.x -= push[0] * weightB;
-    worldParts[b].position.y -= push[1] * weightB;
-    worldParts[b].position.z -= push[2] * weightB;
+    float* velocityA = &worldParts[a].linearVelocity.x;
+    float* velocityB = &worldParts[b].linearVelocity.x;
 
-    if (weightA > 0.0f) (&worldParts[a].linearVelocity.x)[axis] = 0.0f;
-    if (weightB > 0.0f) (&worldParts[b].linearVelocity.x)[axis] = 0.0f;
+    float relativeVelocity = (velocityA[axis] - velocityB[axis]) * normal;
+
+    if (relativeVelocity < 0.0f) {
+        float restitution = 0.0f; // Or bounciness
+        float impulse = -(1.0f + restitution) * relativeVelocity;
+
+        if (weightA > 0.0f) velocityA[axis] += impulse * weightA * normal;
+        if (weightB > 0.0f) velocityB[axis] -= impulse * weightB * normal;
+    }
 }
 
 void checkCollisions() {
@@ -1010,8 +1016,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         case WM_MOUSEWHEEL: {
-            Vector3 look = {Camera::CFrame.LookVector.x, Camera::CFrame.LookVector.y, Camera::CFrame.LookVector.z};
-
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
                 cameraDistance = fminf(80.0f, fmaxf(0.0f, floor(cameraDistance) / 1.5f));
             } else if (GET_WHEEL_DELTA_WPARAM(wParam) < 0) {
