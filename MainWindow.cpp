@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 #include <iostream>
+#include <algorithm>
 #include <fstream>
 #include <commdlg.h>
 #include <cmath>
@@ -360,13 +361,11 @@ void rasterizeTriangle(float x0, float y0, float z0, float x1, float y1, float z
 
                 int index = y * currentWidth + x;
                 if (z <= zBuffer[index]) {
-                    /* Fix zBuffer transparency bug
-                    if (transparency >= 0.99) {
+                    if (transparency >= 0.999f) {
                         zBuffer[index] = z;
                     }
-                    */
 
-                    zBuffer[index] = z;
+                    //zBuffer[index] = z;
 
                     float correction = z * 255.0f;
 
@@ -619,8 +618,34 @@ int addPart(PartShape shape, Vector3 position, Vector3 size, Colour3 colour, flo
 }
 
 void renderScene() {
+    std::vector<const StructPart*> transparentParts;
+
     for (const auto& part : worldParts) {
-        RenderPart(part.shape, part.position, part.size, part.colour, part.transparency);
+        if (part.transparency >= 0.999f) {
+            RenderPart(part.shape, part.position, part.size, part.colour, part.transparency);
+        } else if (part.transparency > 0.001f) {
+            transparentParts.push_back(&part);
+        }
+    }
+
+    const auto& cameraPosition = Camera::CFrame.Position;
+    std::sort(transparentParts.begin(), transparentParts.end(),
+        [&cameraPosition](const StructPart* a, const StructPart* b) {
+            float dxA = a->position.x - cameraPosition.x;
+            float dyA = a->position.y - cameraPosition.y;
+            float dzA = a->position.z - cameraPosition.z;
+            float distanceSqA = dxA * dxA + dyA * dyA + dzA * dzA;
+
+            float dxB = b->position.x - cameraPosition.x;
+            float dyB = b->position.y - cameraPosition.y;
+            float dzB = b->position.z - cameraPosition.z;
+            float distanceSqB = dxB * dxB + dyB * dyB + dzB * dzB;
+
+            return distanceSqA > distanceSqB;
+        });
+
+    for (const StructPart* part : transparentParts) {
+        RenderPart(part->shape, part->position, part->size, part->colour, part->transparency);
     }
 }
 
