@@ -18,8 +18,13 @@ int currentHeight = 600;
 bool keys[256] = { false };
 
 struct Pixel { unsigned char r, g, b, a; };
-struct Vector3 { float x, y, z; };
 struct Vector2 { float x, y; };
+struct Vector3 {
+    float x, y, z;
+    Vector3(float x = 0, float y = 0, float z = 0) : x(x), y(y), z(z) {}
+    Vector3 operator+(const Vector3& v) const { return Vector3(x + v.x, y + v.y, z + v.z); }
+    Vector3 operator-(const Vector3& v) const { return Vector3(x - v.x, y - v.y, z - v.z); }
+};
 struct Colour3 { float r, g, b; };
 
 float nearPlaneZ = 0.5f;
@@ -890,7 +895,6 @@ void processMovement(float deltaTime) {
         Camera::CFrame.Position.z -= up.z * cameraSpeed;
     }
 }
-
 
 // SAVE AND OPEN FILE
 void saveToFile(const std::string& filename) {
