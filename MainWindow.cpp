@@ -1087,9 +1087,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         case WM_MOUSEWHEEL: {
             if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-                cameraDistance = fminf(80.0f, fmaxf(0.0f, floor(cameraDistance) / 1.5f));
+                cameraDistance = std::clamp(std::floor(cameraDistance) / 1.5f, 0.0f, 80.0f);
             } else if (GET_WHEEL_DELTA_WPARAM(wParam) < 0) {
-                cameraDistance = fminf(80, fmaxf(0.0f, cameraDistance * 1.5f));
+                cameraDistance = std::clamp(cameraDistance * 1.5f, 0.0f, 80.0f);
                 if (cameraDistance == 0) {
                     cameraDistance = 1.5f;
                 }
